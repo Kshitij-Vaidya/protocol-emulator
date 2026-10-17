@@ -1,0 +1,6 @@
+# Python 3.13 (cocotb 2.0.1 does not support 3.14). Versions match ttihp-verilog-template CI.
+cocotb==2.0.1
+cocotbext-uart==0.1.4
+cocotbext-spi==0.5.0
+pytest==8.4.2
+# Homebrew: sby 0.70, yices2 2.7.0, yosys 0.70, verilator 5.052, icarus-verilog 13.0
