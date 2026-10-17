@@ -1,0 +1,33 @@
+# Simulation outputs
+*.vcd
+*.fst
+*.ghw
+*.lxt
+*.vvp
+sim_build/
+obj_dir/
+results.xml
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Formal
+formal/*/
+!formal/*.sby
+
+# Hardening flow outputs
+runs/
+gds/
+tt/
+*.gds
+*.lef
+*.def
+
+# Python env
+.venv/
+venv/
+
+# Editors / OS
+.DS_Store
+.vscode/
+*.swp
