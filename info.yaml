@@ -1,0 +1,40 @@
+project:
+  title:        "Protocol Emulator"
+  author:       "Kshitij Vaidya"
+  discord:      ""
+  description:  "Programmable I/O processor for firmware protocol emulation (M0: UART transmitter)"
+  language:     "Verilog"
+  clock_hz:     50000000
+  tiles: "1x1"
+  top_module:  "tt_um_protocolEmulator"
+  source_files:
+    - "tt_um_protocolEmulator.v"
+    - "uartTx.v"
+
+pinout:
+  ui[0]: "txData[0]"
+  ui[1]: "txData[1]"
+  ui[2]: "txData[2]"
+  ui[3]: "txData[3]"
+  ui[4]: "txData[4]"
+  ui[5]: "txData[5]"
+  ui[6]: "txData[6]"
+  ui[7]: "txData[7]"
+  uo[0]: "uartTx"
+  uo[1]: "txReady"
+  uo[2]: ""
+  uo[3]: ""
+  uo[4]: ""
+  uo[5]: ""
+  uo[6]: ""
+  uo[7]: ""
+  uio[0]: "send"
+  uio[1]: ""
+  uio[2]: ""
+  uio[3]: ""
+  uio[4]: ""
+  uio[5]: ""
+  uio[6]: ""
+  uio[7]: ""
+
+yaml_version: 6

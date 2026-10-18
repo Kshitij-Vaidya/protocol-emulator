@@ -4,6 +4,7 @@
 *.ghw
 *.lxt
 *.vvp
+*.fst.hier
 sim_build/
 obj_dir/
 results.xml
@@ -22,6 +23,10 @@ tt/
 *.gds
 *.lef
 *.def
+tt_submission/
+src/user_config.json
+src/config_merged.json
+test/gate_level_netlist.v
 
 # Python env
 .venv/

@@ -43,7 +43,7 @@ Terms:
 
 | # | Milestone | Target date | Exit criteria |
 |---|---|---|---|
-| M0 | Tools and first flow run | 2026-10-25 | The UART transmitter in `learning/` passes a self-checking cocotb test. It hardens to GDS with the ttihp template (local or GitHub Actions). |
+| M0 | Tools and first flow run | 2026-10-25 | The UART transmitter in `src/` passes a self-checking cocotb test. It hardens to GDS with the ttihp template workflows in GitHub Actions. |
 | M1 | Architecture and ISA v0.1 | 2026-11-08 | First versions of `architecture.md` and `isa.md` exist. The ISS and assembler run UART TX, UART RX, and SPI master firmware against Python protocol models. |
 | M2 | Core RTL v1 | 2026-11-22 | The RTL core executes ISA v0.1. Lockstep tests pass on directed programs. The real design hardens, and an area report exists. |
 | M3 | Verification infrastructure | 2026-11-29 | A constrained-random program generator, lockstep tests, functional coverage, and first formal proofs exist. UART and SPI firmware pass against cocotbext models. |
@@ -65,10 +65,12 @@ Terms:
 - Record the tool versions in `requirements.txt`.
 - Clone `ttihp-verilog-template`. Read its `info.yaml`, `src/`, `test/`, and
   GitHub Actions files.
-- Decide where to harden: locally (LibreLane in Docker) or in GitHub Actions.
-  Both paths are recommended. Docker is already installed.
-- Write a UART transmitter in `learning/uart_tx/` with a self-checking cocotb
-  test.
+- Harden in GitHub Actions with the template workflows. Add local hardening
+  (LibreLane in Docker) as a second path before M2. Docker is already
+  installed.
+- Write a UART transmitter in `src/uartTx.v` with a self-checking cocotb test
+  in `test/testUartTx.py`. The Tiny Tapeout flow reads RTL only from `src/`.
+  The core RTL replaces this design in M2.
 - Harden the UART transmitter with the template flow. Record the cell count
   and the timing results.
 - Read chapter 3 (PIO) of the RP2040 datasheet. Read the TI PRU reference

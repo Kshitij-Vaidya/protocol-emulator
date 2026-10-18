@@ -21,6 +21,8 @@ Design references: RP2040 PIO state machines and TI PRU cores.
 | `docs/verification_plan.md` | Verification strategy, coverage goals, and test list |
 | `docs/decisions/` | Architecture decision records (one file for each decision) |
 | `docs/notes/` | Research notes (PIO, PRU, protocol timing, tools) |
+| `info.yaml` | Tiny Tapeout project metadata and pinout |
+| `.github/workflows/` | Tiny Tapeout CI: tests, docs, and GDS hardening |
 | `src/` | Synthesizable RTL (Tiny Tapeout convention) |
 | `test/` | cocotb testbenches (Tiny Tapeout convention) |
 | `formal/` | SymbiYosys properties and `.sby` jobs |
