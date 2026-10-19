@@ -187,7 +187,8 @@ def renderAreaLogRow(metrics: dict[str, Any], info: RunInfo) -> str:
     return "\n".join([
         "Area log row (Markdown, for docs/area_log.md)",
         "",
-        "| Date | Commit | Run | Cells | Area (µm²) | Util (%) | Setup WS (ns) | Hold WS (ns) | DRC | LVS |",
+        "| Date | Commit | Run | Cells | Area (µm²) | Util (%) | Setup WS (ns) "
+        "| Hold WS (ns) | DRC | LVS |",
         "|---|---|---|---|---|---|---|---|---|---|",
         f"| {info.date} | {info.commit} | {info.runId} | {values} |",
     ])

@@ -6,7 +6,7 @@ operations to emulate real protocols after fabrication. The target protocols
 are UART, SPI, and I2C, with optional stretch protocols.
 
 Target: the Jane Street protocol emulator ASIC competition.
-Flow: the Tiny Tapeout `ttihp-verilog-template` (IHP 130 nm, 8×4 tiles).
+Flow: the Tiny Tapeout `ttihp-verilog-template` (IHP 130 nm CMOS5L, 6x4 tiles maximum).
 Deadline: **2027-01-18**.
 
 Design references: RP2040 PIO state machines and TI PRU cores.

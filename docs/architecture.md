@@ -24,6 +24,6 @@ Status: not started (milestone M1, weeks 2–3).
 ## Area budget
 | Block | Estimated cells | Hardened cells |
 |---|---|---|
-| Total budget (8×4 tiles) | 32K (approximate) | |
+| Total budget (6x4 tiles, 0.7 mm²) | 24K (approximate) | |
 
 ## Timing budget

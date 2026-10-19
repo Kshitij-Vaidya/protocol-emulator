@@ -47,7 +47,7 @@ Terms:
 | M1 | Architecture and ISA v0.1 | 2026-11-08 | First versions of `architecture.md` and `isa.md` exist. The ISS and assembler run UART TX, UART RX, and SPI master firmware against Python protocol models. |
 | M2 | Core RTL v1 | 2026-11-22 | The RTL core executes ISA v0.1. Lockstep tests pass on directed programs. The real design hardens, and an area report exists. |
 | M3 | Verification infrastructure | 2026-11-29 | A constrained-random program generator, lockstep tests, functional coverage, and first formal proofs exist. UART and SPI firmware pass against cocotbext models. |
-| M4 | I2C and physical-design check | 2026-12-06 | I2C operates (open-drain, clock stretch). The design meets the target clock in STA. It fits in 8×4 tiles with routing margin. |
+| M4 | I2C and physical-design check | 2026-12-06 | I2C operates (open-drain, clock stretch). The design meets the target clock in STA. It fits in 6x4 tiles with routing margin. |
 | M5 | Feature complete (**freeze**) | 2026-12-20 | The selected stretch protocols operate. The host interface and program-load interface are final. ISA v1.0 is frozen. |
 | M6 | Verification closure | 2027-01-03 | Coverage goals are met. Formal properties are proven. Gate-level simulations pass. All bugs are fixed or have a triage decision. |
 | M7 | Ready for tapeout | 2027-01-10 | The official flow makes a clean GDS. `info.yaml` and the documentation are complete. Demo firmware and a README exist. |
@@ -89,7 +89,8 @@ Terms:
 - Make the main architecture decisions (refer to *Open decisions*). Write an
   ADR for each decision.
 - Make area budget v0. Estimate the cells for each block against the total
-  of 32K cells. Keep a margin: the target utilization is 60–70% or less.
+  of 24K cells (6x4 tiles, refer to `docs/notes/competition.md`). Keep a
+  margin: the target utilization is 60–70% or less.
 - Write UART RX and SPI master as plain RTL in `learning/`. These designs are
   HDL practice. They also become reference models.
 
@@ -119,8 +120,9 @@ Terms:
 - Write a cocotb unit test for each block together with the block.
 - Write the lockstep test harness. It compares pin traces and architectural
   state on each cycle.
-- At the end of week 5, harden the real design on 8×4 tiles. From this point,
-  record the cell count each week in `docs/area_log.md`.
+- At the end of week 5, set `tiles: "6x4"` in `info.yaml`, and harden the real
+  design. From this point, record the cell count each week in
+  `docs/area_log.md`.
 
 ### Week 6 (Nov 23–29): M3, verification infrastructure
 - Write a constrained-random program generator. Run its programs in the
@@ -198,7 +200,7 @@ Write an ADR for each decision.
 | Risk | Mitigation |
 |---|---|
 | The learning curve uses too much of the schedule. | Each learning exercise is also a deliverable. M0 requires a full flow run in week 1. |
-| The program memory is too large for 32 tiles. | Calculate its size in week 2 from real ISS firmware. Record the hardened area each week from week 5. |
+| The program memory is too large for 24 tiles (6x4). | Ask about SRAM macros before week 2. Calculate its size in week 2 from real ISS firmware. Record the hardened area each week from week 5. |
 | Timing closure occurs too late. | Harden each week from week 5. Keep the fetch → decode → pin path short. |
 | The flow or a tool fails near the deadline. | Record exact tool versions. Keep two independent flow paths: GitHub Actions and local Docker. |
 | ISA changes cause RTL rework. | Use the ISS first. Freeze the ISA at v0.1 (week 3) and at v1.0 (2026-12-20). |
