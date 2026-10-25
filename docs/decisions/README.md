@@ -7,4 +7,4 @@ ADR-NNNN.
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-hdl-choice.md) | HDL choice | Proposed |
+| [0001](0001-hdl-choice.md) | HDL choice | Accepted |

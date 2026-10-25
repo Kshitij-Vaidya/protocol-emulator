@@ -184,8 +184,8 @@ Write an ADR for each decision.
 
 | Decision | Options | Decide by | Notes |
 |---|---|---|---|
-| HDL | Verilog-2005, SystemVerilog subset, Hardcaml, Amaranth | Week 1 | Proposal: synthesizable Verilog with SV assertions for formal. The template and the tools expect Verilog. Refer to ADR-0001. |
-| Program memory | Flip-flops, latches, or an SRAM macro (if IHP has one for Tiny Tapeout) | Week 2 | This is probably the largest area cost. Calculate the size from the firmware requirements. |
+| HDL | Verilog-2005, SystemVerilog subset, Hardcaml, Amaranth | Week 1 | Accepted: synthesizable Verilog-2005 with SV assertions for formal. Refer to ADR-0001. |
+| Program memory | Flip-flops, latches, or an IHP SRAM macro | Week 2 | This is probably the largest area cost. Calculate the size from the firmware requirements. Refer to `docs/notes/competition.md` for the SRAM macro research. |
 | Program-load path | Serial load on the Tiny Tapeout inputs, SPI flash, or host writes on `uio` | Week 2 | The path must be simple and reliable. It must be possible to test it after fabrication. |
 | Number of cores | 1 core, N small state machines (as in PIO), or 1 core with helper units | Week 2 | The area budget controls this decision. Start with 1 core. Keep the design compatible with N cores. |
 | Clock target | Calculated from the protocol table and the STA results on IHP | Week 2; check again in week 7 | |
