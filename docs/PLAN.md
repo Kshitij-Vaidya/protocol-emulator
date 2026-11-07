@@ -164,9 +164,10 @@ Terms:
   2. WS2812
   3. JTAG and SWD
   4. low-speed USB
-  5. 10 Mbit Ethernet
-- Low-speed USB and 10 Mbit Ethernet probably need a higher clock frequency
-  than the process and tile budget allow. Use the week 7 data to decide.
+- 10 Mbit Ethernet is removed. At 50 MHz, it needs 2.5 cycles for each half
+  bit and an analog differential interface (refer to `docs/notes/protocols.md`).
+- Low-speed USB needs 33 cycles for each bit at 50 MHz, or 32 cycles at 48 MHz.
+  Use the week 7 data to decide.
 - Add a second core or state machine if the area budget allows it.
 - On 2026-12-20, freeze ISA v1.0 and the pinout.
 
@@ -195,13 +196,13 @@ Write an ADR for each decision.
 | Decision | Options | Decide by | Notes |
 |---|---|---|---|
 | HDL | Verilog-2005, SystemVerilog subset, Hardcaml, Amaranth | Week 1 | Accepted: synthesizable Verilog-2005 with SV assertions for formal. Refer to ADR-0001. |
-| Program memory | Flip-flops, latches, or an IHP SRAM macro | Week 2 | Tiny Tapeout accepts the SRAM macro for the March shuttle. It is not proven in silicon. Keep a flip-flop fallback behind the same interface. Refer to `docs/notes/competition.md`. |
+| Program memory | Flip-flops, latches, or an IHP SRAM macro | Week 2 | Accepted: 1-port SRAM macro, 256 × 16, with a flip-flop fallback behind `progMem`. Refer to ADR-0002. |
 | Tile size | 6x4 or 8x4 | Week 5 | 8x4 is confirmed for the March shuttle. No cell count limit applies. Use the smallest size that meets the target utilization. |
-| Program-load path | Serial load on the Tiny Tapeout inputs, SPI flash, or host writes on `uio` | Week 2 | The path must be simple and reliable. It must be possible to test it after fabrication. |
-| Number of cores | 1 core, N small state machines (as in PIO), or 1 core with helper units | Week 2 | The area budget controls this decision. Start with 1 core. Keep the design compatible with N cores. |
-| Clock target | Calculated from the protocol table and the STA results on IHP | Week 2; check again in week 7 | |
-| Timing model | 1 cycle for each instruction (as in PIO), or variable timing with a delay field | Week 3 | Deterministic single-cycle execution makes firmware timing easy to analyze. |
-| Host interface | TX and RX FIFOs (as in PIO), register window, or mailbox | Week 3 | An external MCU or the Tiny Tapeout demo board uses this interface. |
+| Program-load path | Serial load on the Tiny Tapeout inputs, SPI flash, or host writes on `uio` | Week 2 | Accepted: host writes through the host interface, only while the core is halted. Refer to ADR-0006. |
+| Number of cores | 1 core, N small state machines (as in PIO), or 1 core with helper units | Week 2; select N in week 5 | Accepted: 1 core for M2; N cores (2–4), each with its own macro, in M5. Refer to ADR-0003. |
+| Clock target | Calculated from the protocol table and the STA results on IHP | Week 2; check again in week 7 | Accepted: STA at 20 ns (50 MHz); operation at 50 MHz or less; demo at 48 MHz. Refer to ADR-0007. |
+| Timing model | 1 cycle for each instruction (as in PIO), or variable timing with a delay field | Week 3 | Accepted: PIO model with an integer clock divider and a `WAIT` with a timeout. Refer to ADR-0004. |
+| Host interface | TX and RX FIFOs (as in PIO), register window, or mailbox | Week 3 | Accepted: SPI target (mode 0) with a register map. Refer to ADR-0005. |
 | Stretch protocols | Refer to week 8 | Week 7 | Decide from the STA data. |
 
 ---
