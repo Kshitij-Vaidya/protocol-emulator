@@ -16,6 +16,7 @@ the fast corner. The clock period is 20 ns (50 MHz).
 | Date | Commit | Run | Cells | Area (µm²) | Util (%) | Setup WS (ns) | Hold WS (ns) | DRC | LVS | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 2026-10-18 | 6e2caaf | 39120908387 | 246 | 3470.95 | 11.99 | 13.231 | 0.121 | 0 | 0 | M0. 1x1 tile. `uartTx` only. |
+| 2026-11-07 | b6a84cd | 42352888754 | 597 | 9057.48 | 29.35 | 12.990 | 0.126 | n/a | 0 | SRAM macro test. 2x2 tile. `uartTx` and `progMem` (256 × 16 SRAM). Magic DRC off; precheck KLayout DRC passes. Power checks pass. |
 
 ## Budget
 
