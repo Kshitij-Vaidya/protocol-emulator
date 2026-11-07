@@ -23,6 +23,9 @@ jobs:
         shell: bash
         run: pip install -r test/requirements.txt
 
+      - name: Run software tests
+        run: pytest
+
       - name: Run tests
         run: |
           cd test

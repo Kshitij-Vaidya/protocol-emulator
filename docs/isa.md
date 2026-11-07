@@ -188,12 +188,13 @@ destinations `X`, `Y`, and `T`. The assembler rejects other combinations.
 | 0 | `txEmpty` | The TX FIFO is empty |
 | 1 | `rxFull` | The RX FIFO is full |
 | 2 | `timeout` | The last `WAIT` ended by timeout |
-| 7:4 | reserved | 0 |
+| 7:3 | reserved | 0 |
 | 15:8 | `flags` | `F7`–`F0` |
 
 ## Example programs
 
-The examples use the `pioasm` syntax. `side n` sets the side-set bits, and `[n]` sets the delay.
+The examples use the assembler syntax in `sw/asm/README.md`. `side n` sets the side-set bits,
+and `[n]` sets the delay.
 The ISS must run each example against a Python protocol model in week 3.
 The programs in `sw/asm/examples` must be the same as these programs.
 
@@ -206,9 +207,9 @@ Configuration: `sideCount` 1, `sideEn` 1, side-set pin and OUT pin = TX. 4 ticks
 .side_set 1 opt
     pull        side 1 [3]  ; stop bit, or idle while the TX FIFO is empty
     set x, 7    side 0 [3]  ; start bit, 4 ticks
-bitloop:
+bitLoop:
     out pins, 1             ; 1 data bit
-    jmp x-- bitloop    [2]  ; 4 ticks for each bit
+    jmp x-- bitLoop    [2]  ; 4 ticks for each bit
 ```
 
 ### UART RX (8N1) with framing check, 9 instructions
@@ -219,14 +220,14 @@ Configuration: `sideCount` 0, IN pin and `jmpPin` = RX. 8 ticks for each bit.
 start:
     wait 0 pin 0            ; start bit
     set x, 7           [10] ; 12 ticks from the edge: the center of data bit 0
-bitloop:
+bitLoop:
     in pins, 1
-    jmp x-- bitloop    [6]  ; 8 ticks for each bit
-    jmp pin good_stop
+    jmp x-- bitLoop    [6]  ; 8 ticks for each bit
+    jmp pin goodStop
     flag set 0              ; framing error or break
     wait 1 pin 0            ; wait for the idle line
     jmp start
-good_stop:
+goodStop:
     push
 ```
 
@@ -245,16 +246,16 @@ autopush at 8 bits.
 ### WS2812B, 4 instructions
 
 Configuration: `sideCount` 1, side-set pin = DIN, autopull at 24 bits from 2 FIFO words (refer to
-open question 3). 10 ticks for each bit: `clkDiv` = 6 at 48 MHz (125 ns tick, 1.25 µs bit).
+open question 1). 10 ticks for each bit: `clkDiv` = 6 at 48 MHz (125 ns tick, 1.25 µs bit).
 
 ```
 .side_set 1
 .wrap_target
-bitloop:
+bitLoop:
     out x, 1        side 0 [2]  ; low for 3 ticks
-    jmp !x do_zero  side 1 [2]  ; high for 3 ticks
-    jmp bitloop     side 1 [3]  ; 1 bit: high for 4 more ticks
-do_zero:
+    jmp !x doZero   side 1 [2]  ; high for 3 ticks
+    jmp bitLoop     side 1 [3]  ; 1 bit: high for 4 more ticks
+doZero:
     nop             side 0 [3]  ; 0 bit: low for 4 more ticks
 .wrap
 ```
@@ -272,7 +273,7 @@ do_zero:
 ```
     set t, 50               ; timeout: 50 ticks
     wait 1 pin 1 timeout    ; wait for SCL high (clock stretch)
-    jmp timeout bus_error   ; the target held SCL low too long
+    jmp timeout busError    ; the target held SCL low too long
 ```
 
 ## Decisions for v0.1
