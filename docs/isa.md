@@ -54,8 +54,16 @@ The pin mapping uses a 5-bit pin number. The host interface uses 4 pins (ADR-000
 | 15–19 | `ui_in[7:3]` | Input only |
 | 20–31 | none | Reads as 0. Writes have no effect. |
 
-Each input has a 2-flip-flop synchronizer. The host can bypass it for each pin (refer to
-`docs/notes/protocols.md`, calculation 2).
+Each input has a 2-flip-flop synchronizer. The core reads a synchronized input 2 cycles late.
+
+The 32-bit `syncBypass` register has 1 bit for each pin number. A 1 bypasses the synchronizer of
+that pin, and the core reads the pin in the same cycle. The cores share `syncBypass`. Bits for
+pins that are not inputs have no effect. The host writes `syncBypass` while the cores are halted
+(ADR-0006).
+
+CAUTION: Use the bypass only for an input that changes at a known time after a core output edge,
+for example MISO after SCK. An asynchronous input that is bypassed can make a flip-flop
+metastable.
 
 ## Timing rules
 
@@ -246,7 +254,8 @@ autopush at 8 bits.
 ### WS2812B, 4 instructions
 
 Configuration: `sideCount` 1, side-set pin = DIN, OUT shift left, autopull at 8 bits. Each FIFO
-word holds 1 byte in bits 15:8 (refer to open question 1). 10 ticks for each bit: `clkDiv` = 6 at 48 MHz (125 ns tick, 1.25 µs bit).
+word holds 1 byte in bits 15:8 (refer to open question 1). 10 ticks for each bit: `clkDiv` = 6
+at 48 MHz (125 ns tick, 1.25 µs bit).
 
 ```
 .side_set 1
@@ -282,10 +291,16 @@ doZero:
    the `SET` data is 0–63. PIO uses 5 bits. The integer clock divider gives long delays, and a
    256-word program memory needs longer jumps.
 2. **Data width: 16 bits.** This is the same as the SRAM word and the FIFO word. PIO uses 32
-   bits. With 16 bits, a 24-bit WS2812B pixel needs 2 FIFO words.
+   bits. With 16 bits, a 24-bit WS2812B pixel needs more than 1 FIFO word (open question 1).
 3. **Data between cores: postponed to v0.2.** The flags synchronize the cores, but they do not
    move data (PIO limit). Decide a shared register together with the number of cores (ADR-0003,
    week 5).
+4. **Input synchronizer bypass: in v0.1.** The ISS shows that the SPI controller program fails
+   at `clkDiv` 1 (SCK 12 MHz at 48 MHz) with the synchronizer on MISO. With the bypass on MISO, it
+   operates. The synchronizer limits SCK to 6 MHz at 48 MHz. Add `syncBypass` to the host
+   register map. The MISO data must arrive within 2 cycles (41.7 ns at 48 MHz) after the SCK
+   falling edge. This time includes the mux round trip (20 ns) and the target clock-to-output
+   delay. Check it against the IHP pad values before week 7.
 
 ## Open questions
 
@@ -294,8 +309,5 @@ doZero:
    3 host writes for each pixel. Decide in week 5 if a 32-bit pull threshold is necessary.
 2. **I2C program.** Write it in the ISS in week 3. The PIO version has 18 instructions and uses
    `OUT EXEC`. This ISA has all the instructions that it needs.
-3. **Input synchronizer bypass.** With 2 synchronizer stages, the SPI controller program needs
-   `clkDiv` 2 or more (SCK 6 MHz at 48 MHz). SCK at 12 MHz needs the bypass on the MISO pin.
-   Define the bypass control in the host interface.
-4. **UART RX tolerance.** The UART RX program receives back-to-back frames with a baud error of
+3. **UART RX tolerance.** The UART RX program receives back-to-back frames with a baud error of
    ±2%. At −3%, it loses the frame alignment, because it uses 2 ticks after the stop-bit sample.

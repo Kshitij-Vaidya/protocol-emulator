@@ -30,8 +30,8 @@ pytest
 1. Cycle 0 is the first cycle after the core starts.
 2. The core has a tick on cycles 0, `clkDiv`, 2 × `clkDiv`, and so on.
 3. An instruction that executes on cycle c changes its output pins on cycle c + 1.
-4. With `syncStages` set to 2, the core reads on cycle c the inputs of cycle c − 2.
-   With `syncStages` set to 0, the core reads the inputs of cycle c.
+4. On cycle c, the core reads the inputs of cycle c − 2. For each pin with its `syncBypass` bit
+   set, the core reads the input of cycle c.
 5. At the start, the synchronizer holds the first input value. This models a start after the
    program load (ADR-0006).
 6. A `WAIT` with a timeout that ends by timeout takes `T` + 1 ticks.
@@ -62,5 +62,5 @@ The tests in `iss/test/testFirmware.py` show these results for the programs in
 |---|---|
 | UART TX | Each edge is on an exact bit boundary. `clkDiv` 104 gives 115200 baud (+0.16%) at 48 MHz. |
 | UART RX | Back-to-back frames are received with a baud error of ±2%. At −3%, the receiver loses the frame alignment after 4 frames. |
-| SPI mode 0 | With 2 synchronizer stages, `clkDiv` must be 2 or more (SCK 6 MHz at 48 MHz). At `clkDiv` 1 (12 MHz), the core must bypass the MISO synchronizer. |
+| SPI mode 0 | Without the bypass, `clkDiv` must be 2 or more (SCK 6 MHz at 48 MHz). With the `syncBypass` bit set for MISO, `clkDiv` 1 (SCK 12 MHz) operates. |
 | WS2812B | T0H, T0L, T1H, and T1L are inside the datasheet limits at 48 MHz with `clkDiv` 6 |

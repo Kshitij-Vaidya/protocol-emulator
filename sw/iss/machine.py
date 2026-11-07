@@ -7,18 +7,19 @@ from iss.core import Core, CoreConfig, FlagBank
 bidirectionalMask = 0xFF
 outputOnlyMask = 0x7F << 8
 inputMask = bidirectionalMask | (0x1F << 15)
+syncStages = 2
 
 Environment = Callable[[int, int], int]
 
 
 class Machine:
     def __init__(
-        self, cores: Sequence[tuple[Program, CoreConfig]], syncStages: int = 2
+        self, cores: Sequence[tuple[Program, CoreConfig]], syncBypass: int = 0
     ) -> None:
         self.flags = FlagBank()
         self.cores = [Core(program, config, self.flags) for program, config in cores]
         self.cycle = 0
-        self._syncStages = syncStages
+        self.syncBypass = syncBypass & inputMask
         self._syncPipe: deque[int] = deque()
 
     @property
@@ -38,9 +39,10 @@ class Machine:
     def step(self, inputs: int) -> None:
         inputs &= inputMask
         if not self._syncPipe:
-            self._syncPipe.extend([inputs] * self._syncStages)
+            self._syncPipe.extend([inputs] * syncStages)
         self._syncPipe.append(inputs)
-        synchronized = self._syncPipe.popleft()
+        delayed = self._syncPipe.popleft()
+        synchronized = (delayed & ~self.syncBypass) | (inputs & self.syncBypass)
         for core in self.cores:
             core.clock(synchronized)
         self.cycle += 1

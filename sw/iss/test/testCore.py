@@ -61,10 +61,10 @@ def testSideSetAppliesWhileStalled() -> None:
     assert machine.cores[0].pc == 0
 
 
-@pytest.mark.parametrize(("syncStages", "expectedEdge"), [(2, 16), (0, 14)])
-def testDelayStartsAfterWaitAndInputIsSynchronized(syncStages: int, expectedEdge: int) -> None:
+@pytest.mark.parametrize(("syncBypass", "expectedEdge"), [(0, 16), (1 << inputPin, 14)])
+def testDelayStartsAfterWaitAndInputIsSynchronized(syncBypass: int, expectedEdge: int) -> None:
     program = assemble(f"wait 1 gpio {inputPin} [2]\nset pins, 1\nwait 1 flag 0\n")
-    machine = Machine([(program, CoreConfig(setBase=firstOutput, setCount=1))], syncStages)
+    machine = Machine([(program, CoreConfig(setBase=firstOutput, setCount=1))], syncBypass)
     assert recordPin(machine, 30, inputRise=10) == [(0, 0), (expectedEdge, 1)]
 
 
@@ -79,6 +79,16 @@ failed:
     set pins, 2
     jmp failed
 """
+
+
+def testSyncBypassAppliesOnlyToSelectedPins() -> None:
+    otherPin = inputPin + 1
+    program = assemble("nop\nmov isr, pins\npush\nwait 1 flag 7\n")
+    machine = Machine([(program, CoreConfig(inBase=inputPin))], syncBypass=1 << inputPin)
+    bothHigh = (1 << inputPin) | (1 << otherPin)
+    for inputs in (0, bothHigh, bothHigh):
+        machine.step(inputs)
+    assert machine.cores[0].hostRead() == 0b01
 
 
 def testWaitTimesOutAfterTTicks() -> None:

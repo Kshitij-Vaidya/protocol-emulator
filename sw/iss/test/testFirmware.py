@@ -116,7 +116,7 @@ def testUartRxFramingErrorSetsFlagAndRecovers() -> None:
 
 
 def runSpi(
-    sent: Sequence[int], responses: Sequence[int], clkDiv: int, syncStages: int
+    sent: Sequence[int], responses: Sequence[int], clkDiv: int, syncBypass: int
 ) -> tuple[SpiTarget, list[int], PinRecorder]:
     config = CoreConfig(
         clkDiv=clkDiv,
@@ -131,7 +131,7 @@ def runSpi(
         autoPush=True,
         pushThreshold=byteBits,
     )
-    machine = Machine([(loadExample("spiMode0"), config)], syncStages)
+    machine = Machine([(loadExample("spiMode0"), config)], syncBypass)
     core = machine.cores[0]
     target = SpiTarget(responses)
     recorder = PinRecorder(sckPin)
@@ -155,9 +155,9 @@ spiSent = [0x9A, 0x00, 0xFF, 0x3C]
 spiResponses = [0xC5, 0x81, 0x7E, 0x0F]
 
 
-@pytest.mark.parametrize(("clkDiv", "syncStages"), [(2, 2), (4, 2), (1, 0)])
-def testSpiMode0ExchangesBytes(clkDiv: int, syncStages: int) -> None:
-    target, received, recorder = runSpi(spiSent, spiResponses, clkDiv, syncStages)
+@pytest.mark.parametrize(("clkDiv", "syncBypass"), [(2, 0), (4, 0), (1, 1 << misoPin)])
+def testSpiMode0ExchangesBytes(clkDiv: int, syncBypass: int) -> None:
+    target, received, recorder = runSpi(spiSent, spiResponses, clkDiv, syncBypass)
     assert target.received == spiSent
     assert received == spiResponses
     rising = [cycle for cycle, level in recorder.edges if level == 1]
@@ -166,8 +166,8 @@ def testSpiMode0ExchangesBytes(clkDiv: int, syncStages: int) -> None:
     }
 
 
-def testSpiAtFullSpeedNeedsSynchronizerBypass() -> None:
-    target, received, _ = runSpi(spiSent, spiResponses, clkDiv=1, syncStages=2)
+def testSpiAtFullSpeedFailsWithoutSynchronizerBypass() -> None:
+    target, received, _ = runSpi(spiSent, spiResponses, clkDiv=1, syncBypass=0)
     assert target.received == spiSent
     assert received != spiResponses
 
