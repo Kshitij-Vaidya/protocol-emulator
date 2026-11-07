@@ -47,7 +47,7 @@ Terms:
 | M1 | Architecture and ISA v0.1 | 2026-11-08 | First versions of `architecture.md` and `isa.md` exist. The ISS and assembler run UART TX, UART RX, and SPI master firmware against Python protocol models. |
 | M2 | Core RTL v1 | 2026-11-22 | The RTL core executes ISA v0.1. Lockstep tests pass on directed programs. The real design hardens, and an area report exists. |
 | M3 | Verification infrastructure | 2026-11-29 | A constrained-random program generator, lockstep tests, functional coverage, and first formal proofs exist. UART and SPI firmware pass against cocotbext models. |
-| M4 | I2C and physical-design check | 2026-12-06 | I2C operates (open-drain, clock stretch). The design meets the target clock in STA. It fits in 6x4 tiles with routing margin. |
+| M4 | I2C and physical-design check | 2026-12-06 | I2C operates (open-drain, clock stretch). The design meets the target clock in STA. It fits in the selected tile size (8x4 maximum) with routing margin. |
 | M5 | Feature complete (**freeze**) | 2026-12-20 | The selected stretch protocols operate. The host interface and program-load interface are final. ISA v1.0 is frozen. |
 | M6 | Verification closure | 2027-01-03 | Coverage goals are met. Formal properties are proven. Gate-level simulations pass. All bugs are fixed or have a triage decision. |
 | M7 | Ready for tapeout | 2027-01-10 | The official flow makes a clean GDS. `info.yaml` and the documentation are complete. Demo firmware and a README exist. |
@@ -85,11 +85,11 @@ Terms:
 - Use this table to calculate the required clock frequency and timing
   resolution. Do not estimate these values without the table.
 - Compare PIO and PRU. Record the strong and weak points of each for a
-  1 mm² budget.
+  0.93 mm² budget.
 - Make the main architecture decisions (refer to *Open decisions*). Write an
   ADR for each decision.
 - Make area budget v0. Estimate the cells for each block against the total
-  of 24K cells (6x4 tiles, refer to `docs/notes/competition.md`). Keep a
+  of 32K cells (8x4 tiles, refer to `docs/notes/competition.md`). Keep a
   margin: the target utilization is 60–70% or less.
 - Write UART RX and SPI master as plain RTL in `learning/`. These designs are
   HDL practice. They also become reference models.
@@ -110,8 +110,18 @@ Terms:
   Then freeze ISA v0.1.
 
 ### Weeks 4–5 (Nov 9–22): M2, core RTL v1
+- Before the core RTL, do the SRAM macro test:
+  1. Change the CI to `TinyTapeout/tt-gds-action@ttihp27a`, as in the Tiny
+     Tapeout SRAM example.
+  2. Add `RM_IHPSG13_1P_256x16_c2_bm_bist` to the M0 design. Use the
+     integration procedure in `docs/notes/competition.md`.
+  3. Make the `gds`, `precheck`, `gl_test`, and `viewer` jobs pass. Do the 3
+     power checks after the harden.
+  4. Record the result in `docs/area_log.md`.
 - Write these blocks:
-  - program memory and program-load path,
+  - program memory and program-load path. Put the memory behind 1 interface
+    (address, read data, write data, write enable, 1-cycle read latency). Both
+    the SRAM macro and the fallback flip-flop memory must fit behind it,
   - fetch and decode,
   - execute, with a minimal ALU,
   - pin I/O unit (output, output enable, input synchronizers),
@@ -120,9 +130,9 @@ Terms:
 - Write a cocotb unit test for each block together with the block.
 - Write the lockstep test harness. It compares pin traces and architectural
   state on each cycle.
-- At the end of week 5, set `tiles: "6x4"` in `info.yaml`, and harden the real
-  design. From this point, record the cell count each week in
-  `docs/area_log.md`.
+- At the end of week 5, select the tile size (8x4 maximum) and set `tiles` in
+  `info.yaml`. Harden the real design. From this point, record the cell count
+  each week in `docs/area_log.md`.
 
 ### Week 6 (Nov 23–29): M3, verification infrastructure
 - Write a constrained-random program generator. Run its programs in the
@@ -185,7 +195,8 @@ Write an ADR for each decision.
 | Decision | Options | Decide by | Notes |
 |---|---|---|---|
 | HDL | Verilog-2005, SystemVerilog subset, Hardcaml, Amaranth | Week 1 | Accepted: synthesizable Verilog-2005 with SV assertions for formal. Refer to ADR-0001. |
-| Program memory | Flip-flops, latches, or an IHP SRAM macro | Week 2 | This is probably the largest area cost. Calculate the size from the firmware requirements. Refer to `docs/notes/competition.md` for the SRAM macro research. |
+| Program memory | Flip-flops, latches, or an IHP SRAM macro | Week 2 | Tiny Tapeout accepts the SRAM macro for the March shuttle. It is not proven in silicon. Keep a flip-flop fallback behind the same interface. Refer to `docs/notes/competition.md`. |
+| Tile size | 6x4 or 8x4 | Week 5 | 8x4 is confirmed for the March shuttle. No cell count limit applies. Use the smallest size that meets the target utilization. |
 | Program-load path | Serial load on the Tiny Tapeout inputs, SPI flash, or host writes on `uio` | Week 2 | The path must be simple and reliable. It must be possible to test it after fabrication. |
 | Number of cores | 1 core, N small state machines (as in PIO), or 1 core with helper units | Week 2 | The area budget controls this decision. Start with 1 core. Keep the design compatible with N cores. |
 | Clock target | Calculated from the protocol table and the STA results on IHP | Week 2; check again in week 7 | |
@@ -200,9 +211,11 @@ Write an ADR for each decision.
 | Risk | Mitigation |
 |---|---|
 | The learning curve uses too much of the schedule. | Each learning exercise is also a deliverable. M0 requires a full flow run in week 1. |
-| The program memory is too large for 24 tiles (6x4). | Ask about SRAM macros before week 2. Calculate its size in week 2 from real ISS firmware. Record the hardened area each week from week 5. |
+| The program memory is too large for the tile budget. | Use the SRAM macro. Calculate the memory size from real ISS firmware. Record the hardened area each week from week 5. |
+| The SRAM macro does not operate in silicon, or its power scheme changes. | Keep a flip-flop fallback behind the same memory interface. Make the UART, SPI, and I2C firmware fit in 32 instructions each. Watch the Tiny Tapeout SRAM example for updates. |
+| The SRAM macro integration fails in the flow. | Do the macro test with the M0 design before the core RTL (weeks 4–5). |
 | Timing closure occurs too late. | Harden each week from week 5. Keep the fetch → decode → pin path short. |
-| The flow or a tool fails near the deadline. | Record exact tool versions. Keep two independent flow paths: GitHub Actions and local Docker. |
+| The flow or a tool fails near the deadline. | Record exact tool versions. Use the `ttihp27a` tag of `tt-gds-action`. Keep two independent flow paths: GitHub Actions and local Docker. |
 | ISA changes cause RTL rework. | Use the ISS first. Freeze the ISA at v0.1 (week 3) and at v1.0 (2026-12-20). |
 | The judges score the verification as weak. | Formal checks, constrained-random tests, and coverage are milestones in the schedule. |
 

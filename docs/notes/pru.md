@@ -64,7 +64,7 @@ section.
 
 Complete this table after the notes in `pio.md` and in this file are complete.
 
-| Property | PIO | PRU | Better for a 6x4 tile budget |
+| Property | PIO | PRU | Better for an 8x4 tile budget |
 |---|---|---|---|
 | Instruction width | | | |
 | Instructions in memory | | | |

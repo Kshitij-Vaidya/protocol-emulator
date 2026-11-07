@@ -21,8 +21,8 @@ the fast corner. The clock period is 20 ns (50 MHz).
 
 | Item | Value |
 |---|---|
-| Tile size limit | 6x4 |
-| Nominal tile area | 0.7 mm² (use this value for the budget) |
-| 6x4 die area | 1289.28 µm × 710.64 µm = 0.916 mm² |
-| Cell budget | 24K cells (approximate) |
+| Tile size limit | 8x4 |
+| Nominal tile area | 0.93 mm² (use this value for the budget) |
+| 8x4 die area | 1724.16 µm × 710.64 µm = 1.225 mm² |
+| Cell budget | 32K cells (approximate). The rules have no cell count limit. |
 | Target utilization | 60–70% or less |
