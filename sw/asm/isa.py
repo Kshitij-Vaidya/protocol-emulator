@@ -6,6 +6,8 @@ timingBits = 4
 opcodeShift = 13
 timingShift = 9
 fieldShift = 6
+operandMask = (1 << timingShift) - 1
+timingMask = (1 << timingBits) - 1
 maxBitCount = 16
 pinCount = 32
 flagCount = 8
@@ -36,51 +38,97 @@ class MovOperation(IntEnum):
     bitXor = 7
 
 
+class JmpCondition(IntEnum):
+    always = 0
+    xZero = 1
+    xDecrement = 2
+    yDecrement = 3
+    xNotEqualY = 4
+    pin = 5
+    osrNotEmpty = 6
+    timeout = 7
+
+
+class WaitSource(IntEnum):
+    gpio = 0
+    pin = 1
+    flag = 2
+
+
+class InSource(IntEnum):
+    pins = 0
+    x = 1
+    y = 2
+    null = 3
+    isr = 6
+    osr = 7
+
+
+class OutDestination(IntEnum):
+    pins = 0
+    x = 1
+    y = 2
+    null = 3
+    pindirs = 4
+    pc = 5
+    isr = 6
+    exec = 7
+
+
+class MovDestination(IntEnum):
+    pins = 0
+    x = 1
+    y = 2
+    t = 3
+    exec = 4
+    pc = 5
+    isr = 6
+    osr = 7
+
+
+class MovSource(IntEnum):
+    pins = 0
+    x = 1
+    y = 2
+    null = 3
+    status = 4
+    isr = 5
+    osr = 6
+    t = 7
+
+
+class SetDestination(IntEnum):
+    pins = 0
+    x = 1
+    y = 2
+    t = 3
+    pindirs = 4
+
+
+class FlagOperation(IntEnum):
+    set = 0
+    clear = 1
+    wait = 2
+
+
 jmpConditions = {
-    "": 0,
-    "!x": 1,
-    "x--": 2,
-    "y--": 3,
-    "x!=y": 4,
-    "pin": 5,
-    "!osre": 6,
-    "timeout": 7,
+    "": JmpCondition.always,
+    "!x": JmpCondition.xZero,
+    "x--": JmpCondition.xDecrement,
+    "y--": JmpCondition.yDecrement,
+    "x!=y": JmpCondition.xNotEqualY,
+    "pin": JmpCondition.pin,
+    "!osre": JmpCondition.osrNotEmpty,
+    "timeout": JmpCondition.timeout,
 }
-waitSources = {"gpio": 0, "pin": 1, "flag": 2}
-inSources = {"pins": 0, "x": 1, "y": 2, "null": 3, "isr": 6, "osr": 7}
-outDestinations = {
-    "pins": 0,
-    "x": 1,
-    "y": 2,
-    "null": 3,
-    "pindirs": 4,
-    "pc": 5,
-    "isr": 6,
-    "exec": 7,
-}
-movDestinations = {
-    "pins": 0,
-    "x": 1,
-    "y": 2,
-    "t": 3,
-    "exec": 4,
-    "pc": 5,
-    "isr": 6,
-    "osr": 7,
-}
-movSources = {
-    "pins": 0,
-    "x": 1,
-    "y": 2,
-    "null": 3,
-    "status": 4,
-    "isr": 5,
-    "osr": 6,
-    "t": 7,
-}
+waitSources = {member.name: member for member in WaitSource}
+inSources = {member.name: member for member in InSource}
+outDestinations = {member.name: member for member in OutDestination}
+movDestinations = {member.name: member for member in MovDestination}
+movSources = {member.name: member for member in MovSource}
 aluDestinations = frozenset({"x", "y", "t"})
-setDestinations = {"pins": 0, "x": 1, "y": 2, "t": 3, "pindirs": 4}
-flagOperations = {"set": 0, "clear": 1, "wait": 2}
+setDestinations = {member.name: member for member in SetDestination}
+flagOperations = {member.name: member for member in FlagOperation}
 
 
 @dataclass(frozen=True)
@@ -106,6 +154,12 @@ class SideSetConfig:
     @property
     def maxSide(self) -> int:
         return (1 << self.sideCount) - 1
+
+    def unpackTiming(self, field: int) -> tuple[int | None, int]:
+        delay = field & self.maxDelay
+        isSideSet = self.sideCount > 0 and (not self.sideEn or bool(field >> (timingBits - 1)))
+        side = (field >> self.delayBits) & self.maxSide if isSideSet else None
+        return side, delay
 
     def packTiming(self, side: int | None, delay: int) -> int:
         field = delay

@@ -121,7 +121,7 @@ The decrement in `X--` and `Y--` always occurs, as in PIO.
 |---|---|
 | Polarity | 1: wait for 1. 0: wait for 0. |
 | Source | 00: pin number (absolute). 01: input-mapped pin (`inBase` + index). 10: flag (index 0–7). 11: reserved. |
-| Timeout enable | 1: the wait ends after `T` ticks if the condition is not met. The `TIMEOUT` status bit is set. |
+| Timeout enable | 1: the wait ends after `T` stalled ticks if the condition is not met. The `WAIT` then takes `T` + 1 ticks. The `TIMEOUT` status bit is set. |
 
 Each `WAIT` clears the `TIMEOUT` status bit when it starts. Thus, `JMP TIMEOUT` directly after a
 `WAIT` tests that `WAIT` only.
@@ -245,8 +245,8 @@ autopush at 8 bits.
 
 ### WS2812B, 4 instructions
 
-Configuration: `sideCount` 1, side-set pin = DIN, autopull at 24 bits from 2 FIFO words (refer to
-open question 1). 10 ticks for each bit: `clkDiv` = 6 at 48 MHz (125 ns tick, 1.25 µs bit).
+Configuration: `sideCount` 1, side-set pin = DIN, OUT shift left, autopull at 8 bits. Each FIFO
+word holds 1 byte in bits 15:8 (refer to open question 1). 10 ticks for each bit: `clkDiv` = 6 at 48 MHz (125 ns tick, 1.25 µs bit).
 
 ```
 .side_set 1
@@ -289,7 +289,13 @@ doZero:
 
 ## Open questions
 
-1. **Autopull of more than 16 bits.** WS2812B needs 24 bits. Allow a pull threshold up to 32
-   with 2 FIFO words, or let firmware use 2 `PULL` instructions.
+1. **Autopull of more than 16 bits.** WS2812B needs 24 bits for each pixel. The ISS shows that
+   autopull at 8 bits, with 3 FIFO words for each pixel, keeps the exact bit timing. The cost is
+   3 host writes for each pixel. Decide in week 5 if a 32-bit pull threshold is necessary.
 2. **I2C program.** Write it in the ISS in week 3. The PIO version has 18 instructions and uses
    `OUT EXEC`. This ISA has all the instructions that it needs.
+3. **Input synchronizer bypass.** With 2 synchronizer stages, the SPI controller program needs
+   `clkDiv` 2 or more (SCK 6 MHz at 48 MHz). SCK at 12 MHz needs the bypass on the MISO pin.
+   Define the bypass control in the host interface.
+4. **UART RX tolerance.** The UART RX program receives back-to-back frames with a baud error of
+   ±2%. At −3%, it loses the frame alignment, because it uses 2 ticks after the stop-bit sample.
