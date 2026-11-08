@@ -41,6 +41,8 @@ pytest
 8. The cores execute in index order on each tick. A flag change by core n is visible to cores
    with an index above n on the same tick.
 9. Outputs from different cores are combined with OR.
+10. A host write or read of a FIFO on cycle c takes effect at the end of cycle c. The core sees
+    the FIFO state from before the host access on cycle c.
 
 ## Protocol models
 

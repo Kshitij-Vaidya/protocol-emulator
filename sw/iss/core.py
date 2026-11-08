@@ -101,6 +101,8 @@ class Core:
         self._pendingExec: int | None = None
         self._jumpTarget: int | None = None
         self._inputs = 0
+        self._hostWriteWord: int | None = None
+        self._isHostReadPending = False
         self._handlers: dict[isa.Opcode, Callable[[int], bool]] = {
             isa.Opcode.jmp: self._jmp,
             isa.Opcode.wait: self._wait,
@@ -113,13 +115,16 @@ class Core:
         }
 
     def hostWrite(self, word: int) -> bool:
-        if len(self.txFifo) >= fifoDepth:
+        if len(self.txFifo) >= fifoDepth or self._hostWriteWord is not None:
             return False
-        self.txFifo.append(word & dataMask)
+        self._hostWriteWord = word & dataMask
         return True
 
     def hostRead(self) -> int | None:
-        return self.rxFifo.popleft() if self.rxFifo else None
+        if not self.rxFifo or self._isHostReadPending:
+            return None
+        self._isHostReadPending = True
+        return self.rxFifo[0]
 
     @property
     def status(self) -> int:
@@ -132,6 +137,15 @@ class Core:
         self._divCount = (self._divCount + 1) % self.config.clkDiv
         if isTick:
             self._tick(inputs)
+        self._applyHostAccess()
+
+    def _applyHostAccess(self) -> None:
+        if self._isHostReadPending:
+            self.rxFifo.popleft()
+            self._isHostReadPending = False
+        if self._hostWriteWord is not None:
+            self.txFifo.append(self._hostWriteWord)
+            self._hostWriteWord = None
 
     def _tick(self, inputs: int) -> None:
         if self._delayCount:

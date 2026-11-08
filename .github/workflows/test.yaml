@@ -26,6 +26,12 @@ jobs:
       - name: Run software tests
         run: pytest
 
+      - name: Run core lockstep tests
+        run: |
+          cd test
+          make TOPLEVEL=coreHarness COCOTB_TEST_MODULES=testCoreLockstep
+          ! grep failure results.xml
+
       - name: Run tests
         run: |
           cd test

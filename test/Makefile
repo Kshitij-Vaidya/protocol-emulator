@@ -2,7 +2,7 @@ SIM ?= icarus
 FST ?= -fst
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = tt_um_protocolEmulator.v uartTx.v progMem.v sram_bb.v
+PROJECT_SOURCES = tt_um_protocolEmulator.v uartTx.v progMem.v sram_bb.v fifo.v pinSync.v core.v
 
 SRAM_MODEL = $(PWD)/sram_model/RM_IHPSG13_1P_256x16_c2_bm_bist.v $(PWD)/sram_model/RM_IHPSG13_1P_core_behavioral_bm_bist.v
 VERILOG_SOURCES += $(SRAM_MODEL)
@@ -10,8 +10,9 @@ COMPILE_ARGS += -DFUNCTIONAL -DSIM
 
 ifneq ($(GATES),yes)
 
-SIM_BUILD				= sim_build/rtl
+SIM_BUILD				= sim_build/rtl-$(TOPLEVEL)
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
+VERILOG_SOURCES += $(PWD)/coreHarness.v
 
 else
 
@@ -27,8 +28,10 @@ endif
 COMPILE_ARGS 		+= -I$(SRC_DIR)
 
 VERILOG_SOURCES += $(PWD)/tb.v
-TOPLEVEL = tb
+TOPLEVEL ?= tb
 
-COCOTB_TEST_MODULES = testUartTx,testProgMem
+COCOTB_TEST_MODULES ?= testUartTx,testProgMem
+
+export PYTHONPATH := $(PWD)/../sw:$(PYTHONPATH)
 
 include $(shell cocotb-config --makefiles)/Makefile.sim
