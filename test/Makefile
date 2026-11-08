@@ -2,7 +2,7 @@ SIM ?= icarus
 FST ?= -fst
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = tt_um_protocolEmulator.v uartTx.v progMem.v sram_bb.v fifo.v pinSync.v core.v
+PROJECT_SOURCES = tt_um_protocolEmulator.v hostSpi.v core.v fifo.v pinSync.v progMem.v sram_bb.v
 
 SRAM_MODEL = $(PWD)/sram_model/RM_IHPSG13_1P_256x16_c2_bm_bist.v $(PWD)/sram_model/RM_IHPSG13_1P_core_behavioral_bm_bist.v
 VERILOG_SOURCES += $(SRAM_MODEL)
@@ -30,7 +30,7 @@ COMPILE_ARGS 		+= -I$(SRC_DIR)
 VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL ?= tb
 
-COCOTB_TEST_MODULES ?= testUartTx,testProgMem
+COCOTB_TEST_MODULES ?= testHost
 
 export PYTHONPATH := $(PWD)/../sw:$(PYTHONPATH)
 

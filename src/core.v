@@ -29,6 +29,8 @@ module core (
     output wire        active,
     output wire [7:0]  fetchAddr,
     input  wire [15:0] fetchData,
+    input  wire        hostExecEn,
+    input  wire [15:0] hostExecInstr,
     input  wire        txWriteEn,
     input  wire [15:0] txWriteData,
     input  wire        rxReadEn,
@@ -103,12 +105,15 @@ module core (
     wire                 rxFull;
     wire [dataWidth-1:0] txHead;
 
-    wire                 tick    = activeQ && (divCount == 16'd0);
-    wire                 execute = tick && (delayCount == 4'd0);
-    wire [dataWidth-1:0] instr   = pendingExecValid ? pendingExec : fetchData;
-    wire [2:0]           opcode  = instr[15:13];
-    wire [3:0]           timing  = instr[12:9];
-    wire [8:0]           ops     = instr[8:0];
+    wire                 hostExec  = hostExecEn && !activeQ;
+    wire                 tick      = activeQ && (divCount == 16'd0);
+    wire                 execute   = (tick && (delayCount == 4'd0)) || hostExec;
+    wire                 stalled   = isStalled && !hostExec;
+    wire [dataWidth-1:0] coreInstr = pendingExecValid ? pendingExec : fetchData;
+    wire [dataWidth-1:0] instr     = hostExec ? hostExecInstr : coreInstr;
+    wire [2:0]           opcode    = instr[15:13];
+    wire [3:0]           timing    = instr[12:9];
+    wire [8:0]           ops       = instr[8:0];
 
     wire [2:0] delayBits  = 3'd4 - {1'b0, sideCount} - {2'b0, sideEn};
     wire [3:0] delay      = timing & ~(4'hF << delayBits);
@@ -150,7 +155,7 @@ module core (
 
     reg                  jmpTaken;
     reg                  waitLevel;
-    wire [dataWidth-1:0] waitStart = isStalled ? waitTicks : t;
+    wire [dataWidth-1:0] waitStart = stalled ? waitTicks : t;
     wire [4:0]           setWidth  = {2'b0, setCount};
     wire [dataWidth-1:0] setData   = {10'b0, ops[5:0]};
 
@@ -337,7 +342,7 @@ module core (
                         yNext = y - 1'b1;
                 end
                 opWait: begin
-                    if (!isStalled)
+                    if (!stalled)
                         timeoutFlagNext = 1'b0;
                     if (waitLevel == ops[8]) begin
                         complete = 1'b1;
@@ -469,7 +474,7 @@ module core (
                             flagsNext[ops[2:0]] = 1'b0;
                         end
                         2'd2: begin
-                            if (!isStalled)
+                            if (!stalled)
                                 flagsNext[ops[2:0]] = 1'b1;
                             else
                                 complete = !flags[ops[2:0]];
@@ -480,7 +485,12 @@ module core (
                 default: ;
             endcase
 
-            if (complete) begin
+            if (hostExec) begin
+                if (complete && jumpEn)
+                    pcNext = jumpTarget;
+                if (complete && execSet)
+                    pendingExecValidNext = 1'b1;
+            end else if (complete) begin
                 isStalledNext        = 1'b0;
                 pendingExecValidNext = execSet;
                 delayCountNext       = execSet ? 4'd0 : delay;

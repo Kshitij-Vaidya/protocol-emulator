@@ -1,41 +1,40 @@
 ## How it works
 
-This is the SRAM macro test for the protocol emulator project. It has a program memory (the IHP SRAM macro `RM_IHPSG13_1P_256x16_c2_bm_bist`, 256 words of 16 bits) and a UART transmitter (8N1, 115200 baud, 50 MHz clock).
+This is a programmable I/O processor. A core with deterministic timing executes a program from
+a 256 × 16-bit program memory (the IHP SRAM macro). The program drives and samples pins with
+exact timing, so firmware can emulate protocols such as UART, SPI, and WS2812B.
 
-The host writes words into the memory with the command pins. A rising edge on `send` transmits 1 byte of the addressed word on the UART.
+Each instruction executes in 1 tick. A 16-bit clock divider sets the tick. Each instruction can
+also set up to 3 pins (side-set) and add a delay of up to 15 ticks.
 
-| `uio[2:1]` (command) | Operation |
-|---|---|
-| `00` | Idle. The memory reads the word at the address register. |
-| `01` | The address register gets the byte on `ui[7:0]`. |
-| `10` | The low-byte register gets the byte on `ui[7:0]`. |
-| `11` | The memory writes the word {`ui[7:0]`, low-byte register} at the address register. |
+A host loads the program and controls the core through an SPI target interface (mode 0). The
+host also sends data to the core and receives data from it through 2 FIFOs of 4 words each.
 
-`uio[3]` (`byteSelect`) selects the byte that `send` transmits: 0 for the low byte, 1 for the high byte.
+The protocol pins have pin numbers:
 
-The design synchronizes all inputs with flip-flops. Each input must stay stable for 4 clock cycles or more.
+| Pin numbers | Tiny Tapeout pins | Direction |
+|---|---|---|
+| 0–7 | `uio[7:0]` | Bidirectional |
+| 8–14 | `uo[7:1]` | Output |
+| 15–19 | `ui[7:3]` | Input |
+
+The instruction set is in `docs/isa.md`. The register map is in `docs/architecture.md`.
 
 ## How to test
 
-CAUTION: Change `ui[7:0]` only while the command is `00`. A change during another command can write a wrong value.
+CAUTION: Keep SCK at the clock frequency divided by 16 or less (3 MHz at 48 MHz).
 
-To write a word:
-
-1. Set the command to `00`.
-2. Set the address on `ui[7:0]`. Set the command to `01`. Set the command to `00`.
-3. Set the low byte on `ui[7:0]`. Set the command to `10`. Set the command to `00`.
-4. Set the high byte on `ui[7:0]`. Set the command to `11`. Set the command to `00`.
-
-To read a word:
-
-1. Connect a UART receiver (115200 baud, 8N1) to `uo[0]`.
-2. Set the address with the command `01`. Set the command to `00`.
-3. Set `uio[3]` low. Set `uio[0]` high, then set it low. The receiver shows the low byte.
-4. Wait until `uo[1]` is high.
-5. Set `uio[3]` high. Set `uio[0]` high, then set it low. The receiver shows the high byte.
-
-NOTE: The transmitter ignores a `send` edge while `uo[1]` is low.
+1. Connect an SPI controller (mode 0) to `ui[0]` (SCK), `ui[1]` (CS), `ui[2]` (MOSI), and
+   `uo[0]` (MISO).
+2. Read register 0x11. The value must be 0x5045.
+3. Assemble a program with `sw/asm/assembler.py`. For example, use `sw/asm/examples/uartTx.pasm`.
+4. Write 0 to register 0x02 (`MEM_ADDR`). Write the program words to register 0x03 (`MEM_DATA`).
+5. Write the configuration registers 0x06 to 0x0C. For the UART TX example at 115200 baud and
+   48 MHz, use `CLK_DIV` 104, and set pin 8 as the OUT pin and the side-set pin.
+6. Write 0b11 to register 0x00 (`CTRL`) to start the core.
+7. Write bytes to register 0x0D (`TX_FIFO`). The core sends them on `uo[1]`.
 
 ## External hardware
 
-A USB-to-UART adapter at 3.3 V on `uo[0]`.
+- An SPI controller at 3.3 V, for example the demo board microcontroller.
+- For the UART examples: a USB-to-UART adapter at 3.3 V.

@@ -104,6 +104,8 @@ module coreHarness (
         .active       (active),
         .fetchAddr    (fetchAddr),
         .fetchData    (fetchData),
+        .hostExecEn   (1'b0),
+        .hostExecInstr(16'd0),
         .txWriteEn    (txWriteEn),
         .txWriteData  (txWriteData),
         .rxReadEn     (rxReadEn),
