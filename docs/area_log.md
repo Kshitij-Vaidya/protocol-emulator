@@ -17,6 +17,7 @@ the fast corner. The clock period is 20 ns (50 MHz).
 |---|---|---|---|---|---|---|---|---|---|---|
 | 2026-10-18 | 6e2caaf | 39120908387 | 246 | 3470.95 | 11.99 | 13.231 | 0.121 | 0 | 0 | M0. 1x1 tile. `uartTx` only. |
 | 2026-11-07 | b6a84cd | 42352888754 | 597 | 9057.48 | 29.35 | 12.990 | 0.126 | n/a | 0 | SRAM macro test. 2x2 tile. `uartTx` and `progMem` (256 × 16 SRAM). Magic DRC off; precheck KLayout DRC passes. Power checks pass. |
+| 2026-11-09 | e4bd186 | 42650467327 | 8811 | 113193.00 | 54.39 | 0.123 | 0.117 | n/a | 0 | M2. 4x2 tile. Core, `hostSpi`, and `progMem`. Timing-driven placement, post-GRT repair, and a 3 ns resizer setup margin. Magic DRC off; precheck and GL test pass. |
 
 ## Budget
 
