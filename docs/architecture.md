@@ -60,8 +60,10 @@ The SRAM address is the next PC. The core calculates the next PC from the curren
 the same cycle. Thus, the core executes 1 instruction in each cycle, with the 1-cycle read
 latency of the SRAM.
 
-The path from the SRAM data output through the decode and the next-PC logic to the SRAM address
-is the probable critical path. The SRAM clock-to-data-out delay is 5.06 ns at the slow corner.
+All of the worst setup paths start at the SRAM data output, because the decode and the execute
+logic use the instruction in the same cycle. The SRAM clock-to-data-out delay is 5.3 ns at the
+slow corner in the routed design. The path to the SRAM address has a setup slack of +3.988 ns.
+The "Timing budget" section has the slack of each register group.
 
 ### Start
 1. The host writes `CTRL` with `run` set to 1.
@@ -149,7 +151,48 @@ of the area, which is above the target of 60–70%. Select the final tile size i
 
 ## Timing budget
 - Clock period: 20 ns (ADR-0007).
-- Probable critical path: SRAM data out (5.06 ns, slow corner) to the decode, the next-PC logic,
-  and the SRAM address input.
+- Setup corner: slow, 1.08 V, 125 °C. Hold corner: fast, 1.32 V, −40 °C.
+- The SDC clock uncertainty is 0.25 ns. STA uses it for setup and for hold.
+- Critical paths: all of the worst setup paths start at the SRAM data output. The SRAM
+  clock-to-data-out delay is 5.3 ns at the slow corner in the routed design.
 - SPI MISO at 12 MHz with `syncBypass`: the MISO data must arrive within 2 cycles (41.7 ns at
   48 MHz) after the SCK falling edge (`docs/isa.md`, decision 4).
+
+### Routed results
+The source is the harden of `da32192` (run 42773958557). `docs/area_log.md` has the history.
+
+| Item | Value |
+|---|---|
+| Setup worst slack, slow corner | +3.167 ns |
+| Setup worst slack, typical corner | +8.77 ns |
+| Hold worst slack, fast corner | +0.146 ns |
+| Slow-corner frequency limit | Approximately 59 MHz |
+
+| Register group | Setup slack, slow corner |
+|---|---|
+| `uio_oe` (`pinDir` 0–7) | +3.167 ns |
+| `uio_out` (`pinOut` 0–7) | +3.193 ns |
+| `rxFifo.entries` | +3.265 ns |
+| `uo_out` (`pinOut` 8–14) | +3.684 ns |
+| `y` | +3.868 ns |
+| SRAM `A_ADDR` | +3.988 ns |
+| `pc` | +4.024 ns |
+
+### Configuration for timing
+`src/config.json` sets these values:
+
+- Timing-driven placement (`PL_TIMING_DRIVEN`).
+- Timing repair and design repair after global routing.
+- Resizer setup margin: 3 ns at placement, 6 ns after global routing.
+- Resizer hold margin: 0.1 ns at placement, 0.15 ns after global routing.
+
+CAUTION: Do not set `GRT_RESIZER_SETUP_SLACK_MARGIN` below 6 ns. Detailed routing removes
+approximately 3 ns of the setup slack that the resizer sees after global routing.
+
+### RTL rules for timing
+- OUT, MOV, and SET use 1 shared pin write rotator in `src/core.v`.
+- ADD and SUB use 1 parallel-prefix adder (`prefixAdd`).
+- The FIFO write enable of the entries comes from `full` only, not from the push decision.
+
+NOTE: The FIFO write enable rule makes the path from `writePtr` to the entries short. This path
+was the worst hold path before the hold margin increased to 0.15 ns.
