@@ -14,6 +14,7 @@ clockHz = 48_000_000
 txPin = 8
 sckPin = 9
 mosiPin = 10
+csPin = 11
 dinPin = 9
 rxPin = 15
 misoPin = 16
@@ -170,6 +171,55 @@ def testSpiAtFullSpeedFailsWithoutSynchronizerBypass() -> None:
     target, received, _ = runSpi(spiSent, spiResponses, clkDiv=1, syncBypass=0)
     assert target.received == spiSent
     assert received != spiResponses
+
+
+def runSpiCs(
+    sent: Sequence[int], responses: Sequence[int], clkDiv: int
+) -> tuple[SpiTarget, list[int], PinRecorder, PinRecorder]:
+    config = CoreConfig(
+        clkDiv=clkDiv,
+        outBase=mosiPin,
+        outCount=1,
+        setBase=csPin,
+        setCount=1,
+        sideBase=sckPin,
+        inBase=misoPin,
+        outShiftRight=False,
+        inShiftRight=False,
+    )
+    machine = Machine([(loadExample("spiMode0Cs"), config)])
+    core = machine.cores[0]
+    target = SpiTarget(responses)
+    sckRecorder = PinRecorder(sckPin)
+    csRecorder = PinRecorder(csPin)
+    pending = deque(value << byteShift for value in sent)
+    received: list[int] = []
+
+    def environment(cycle: int, outputs: int) -> int:
+        sckRecorder.sample(cycle, outputs)
+        csRecorder.sample(cycle, outputs)
+        target.update((outputs >> sckPin) & 1, (outputs >> mosiPin) & 1)
+        feedHost(core, pending)
+        word = core.hostRead()
+        if word is not None:
+            received.append(word & 0xFF)
+        return target.miso << misoPin
+
+    machine.run((len(sent) + 1) * 2 * byteBits * spiTicksPerBit * clkDiv, environment)
+    return target, received, sckRecorder, csRecorder
+
+
+@pytest.mark.parametrize("clkDiv", [2, 5])
+def testSpiMode0WithChipSelectFramesEachByte(clkDiv: int) -> None:
+    target, received, sckRecorder, csRecorder = runSpiCs(spiSent, spiResponses, clkDiv)
+    assert target.received == spiSent
+    assert received == spiResponses
+    rising = [cycle for cycle, level in sckRecorder.edges if level == 1]
+    assert len(rising) == len(spiSent) * byteBits
+    assert all(csRecorder.levelAt(cycle) == 0 for cycle in rising)
+    csFrames = [cycle for cycle, level in csRecorder.edges[1:] if level == 0]
+    assert len(csFrames) == len(spiSent)
+    assert csRecorder.edges[-1][1] == 1
 
 
 def ws2812Bits(data: Sequence[int]) -> list[int]:

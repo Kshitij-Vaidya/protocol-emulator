@@ -15,15 +15,19 @@ module tb ();
     reg        hostCsN;
     reg        hostMosi;
     reg        pin15;
-    reg  [3:0] pins16To19;
+    reg        pin16;
+    reg  [2:0] pins17To19;
     reg  [7:0] uio_in;
-    wire [7:0] ui_in = {pins16To19, pin15, hostMosi, hostCsN, hostSck};
+    wire [7:0] ui_in = {pins17To19, pin16, pin15, hostMosi, hostCsN, hostSck};
     wire [7:0] uo_out;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
 
     wire       hostMiso = uo_out[0];
     wire       pin8     = uo_out[1];
+    wire       pin9     = uo_out[2];
+    wire       pin10    = uo_out[3];
+    wire       pin11    = uo_out[4];
 
     tt_um_protocolEmulator user_project (
         .ui_in  (ui_in),

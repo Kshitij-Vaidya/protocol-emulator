@@ -3,6 +3,8 @@ from pathlib import Path
 
 import cocotb
 from cocotb.triggers import ClockCycles
+from cocotbext.spi import SpiBus, SpiConfig
+from cocotbext.spi.devices.generic import SpiSlaveLoopback
 from cocotbext.uart import UartSink, UartSource
 
 from asm.assembler import Program, assemble
@@ -29,6 +31,11 @@ byteShift = 8
 txPin = 8
 rxPin = 15
 uartBaud = 500_000
+spiSckPin = 9
+spiMosiPin = 10
+spiCsPin = 11
+spiMisoPin = 16
+byteMask = 0xFF
 
 
 def loadExample(name: str) -> Program:
@@ -142,3 +149,29 @@ async def testUartRxFirmwareReceivesBytes(dut: Dut) -> None:
     await ClockCycles(dut.clk, 200)
     words = await readRegister(dut, Register.rxFifo, len(data))
     assert bytes(word >> byteShift for word in words) == data
+
+
+@cocotb.test()
+async def testSpiFirmwareExchangesBytesWithLoopbackTarget(dut: Dut) -> None:
+    await resetDut(dut)
+    bus = SpiBus(dut, sclk_name="pin9", mosi_name="pin10", miso_name="pin16", cs_name="pin11")
+    target = SpiSlaveLoopback(bus, SpiConfig(word_width=8, cpol=False, cpha=False))
+    config = CoreConfig(
+        clkDiv=2,
+        outBase=spiMosiPin,
+        outCount=1,
+        setBase=spiCsPin,
+        setCount=1,
+        sideBase=spiSckPin,
+        inBase=spiMisoPin,
+        outShiftRight=False,
+        inShiftRight=False,
+    )
+    sent = [0x9A, 0x00, 0xFF, 0x3C]
+    await startProgram(dut, loadExample("spiMode0Cs"), config)
+    await writeRegister(dut, Register.txFifo, [value << byteShift for value in sent])
+    await ClockCycles(dut.clk, 1000)
+    words = await readRegister(dut, Register.rxFifo, len(sent))
+    assert [word & byteMask for word in words] == [0x00, *sent[:-1]]
+    assert await target.get_contents() == sent[-1]
+    assert int(dut.pin11.value) == 1

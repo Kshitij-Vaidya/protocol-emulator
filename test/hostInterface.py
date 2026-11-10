@@ -28,8 +28,12 @@ class Dut(Protocol):
     hostMosi: LogicObject
     hostMiso: LogicObject
     pin15: LogicObject
-    pins16To19: LogicArrayObject
+    pin16: LogicObject
+    pins17To19: LogicArrayObject
     pin8: LogicObject
+    pin9: LogicObject
+    pin10: LogicObject
+    pin11: LogicObject
     uio_in: LogicArrayObject
     uio_out: LogicArrayObject
     uio_oe: LogicArrayObject
@@ -69,7 +73,8 @@ async def resetDut(dut: Dut) -> None:
     dut.hostCsN.value = 1
     dut.hostMosi.value = 0
     dut.pin15.value = 1
-    dut.pins16To19.value = 0
+    dut.pin16.value = 0
+    dut.pins17To19.value = 0
     dut.uio_in.value = 0
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
