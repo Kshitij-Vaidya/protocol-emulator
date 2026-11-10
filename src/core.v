@@ -578,6 +578,58 @@ module core (
         end
     end
 
+`ifdef FORMAL
+    reg pastValid = 1'b0;
+
+    always @(posedge clk)
+        pastValid <= 1'b1;
+
+    wire running = pastValid && rstN && !restart;
+
+    always @(*) begin
+        if (!pastValid)
+            assume (!rstN);
+        assume (clkDiv != 16'd0);
+        assert (!(hostExec && tick));
+        if (running) begin
+            assert (isrCount <= fullCount);
+            assert (osrCount <= fullCount);
+            assert (!activeQ || divCount < clkDiv);
+        end
+    end
+
+    always @(posedge clk) begin
+        if (pastValid) begin
+            assume ($stable(clkDiv));
+            if ($past(!rstN))
+                assert (pc == 8'd0 && !activeQ && !isStalled && !pendingExecValid);
+            if ($past(rstN && restart))
+                assert (pc == $past(startPc) && !activeQ && delayCount == 4'd0 && !isStalled
+                        && !pendingExecValid && flags == 8'd0 && pinDir == 32'd0);
+            if ($past(running && !execute)) begin
+                assert ($stable(pc) && $stable(x) && $stable(y) && $stable(t));
+                assert ($stable(isr) && $stable(osr) && $stable(isrCount) && $stable(osrCount));
+                assert ($stable(flags) && $stable(pinOut) && $stable(pinDir));
+                assert ($stable(pendingExecValid) && $stable(isStalled));
+            end
+            if ($past(running && tick && delayCount != 4'd0))
+                assert (delayCount == $past(delayCount) - 4'd1);
+            if ($past(running && !tick && !execute))
+                assert ($stable(delayCount));
+            if ($past(running && execute && !hostExec) && isStalled)
+                assert ($stable(pc) && delayCount == 4'd0);
+            if ($past(running && execute && !hostExec && complete && !jumpEn && !pendingExecValid))
+                assert (pc == (($past(pc) == $past(wrapTop)) ? $past(wrapBottom) : $past(pc) + 8'd1));
+        end
+    end
+
+    always @(*) begin
+        cover (running && isStalled && delayCount == 4'd0 && activeQ);
+        cover (running && pendingExecValid);
+        cover (running && delayCount == 4'd15);
+    end
+`endif
+
     wire unusedSignals = &{
         txFull,
         rxEmpty,
