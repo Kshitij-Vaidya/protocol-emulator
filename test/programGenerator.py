@@ -25,6 +25,7 @@ class RandomScenario:
     syncBypass: int
     idleInputs: int
     toggleChance: float
+    readChance: float
 
 
 def _bitCount(rng: random.Random) -> int:
@@ -139,7 +140,7 @@ def randomConfig(rng: random.Random) -> CoreConfig:
 
 def randomProgram(rng: random.Random) -> Program:
     words = tuple(randomInstruction(rng) for _ in range(isa.programWords))
-    wrapTop = rng.choice([isa.programWords - 1, rng.randrange(isa.programWords)])
+    wrapTop = rng.choice([isa.programWords - 1, rng.randrange(4, 48)])
     wrapBottom = rng.randint(0, wrapTop)
     return Program(words, {}, randomSideSet(rng), wrapBottom, wrapTop)
 
@@ -160,7 +161,11 @@ def randomScenario(seed: int) -> RandomScenario:
     hostWords = tuple(randomHostWord(rng) for _ in range(rng.randint(0, 12)))
     syncBypass = rng.randrange(1 << isa.pinCount) & inputMask if rng.random() < 0.3 else 0
     idleInputs = rng.randrange(1 << isa.pinCount) & inputMask
-    return RandomScenario(program, config, hostWords, syncBypass, idleInputs, rng.random() * 0.2)
+    toggleChance = rng.random() * 0.2
+    readChance = rng.choice([1.0, 0.1, 0.02])
+    return RandomScenario(
+        program, config, hostWords, syncBypass, idleInputs, toggleChance, readChance
+    )
 
 
 def randomEnvironment(seed: int, scenario: RandomScenario) -> Callable[[int, int], int]:
@@ -175,3 +180,8 @@ def randomEnvironment(seed: int, scenario: RandomScenario) -> Callable[[int, int
         return levels
 
     return environment
+
+
+def randomHostReads(seed: int, scenario: RandomScenario) -> Callable[[int], bool]:
+    rng = random.Random(seed ^ 0xFEED)
+    return lambda cycle: rng.random() < scenario.readChance

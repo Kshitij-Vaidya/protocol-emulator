@@ -13,7 +13,8 @@ from asm.assembler import Program, assemble
 from iss.core import CoreConfig, IssError
 from iss.machine import Machine, bidirectionalMask, outputOnlyMask
 from iss.models import SpiTarget, UartFrame, UartSource
-from programGenerator import randomEnvironment, randomScenario
+from functionalCoverage import ExecuteSample, FunctionalCoverage, StateSample
+from programGenerator import randomEnvironment, randomHostReads, randomScenario
 
 examplesDir = Path(__file__).resolve().parent.parent / "sw" / "asm" / "examples"
 clkPeriodNs = 20
@@ -22,6 +23,7 @@ outputMask = bidirectionalMask | outputOnlyMask
 stateNames = ("pc", "x", "y", "t", "isr", "osr", "isrCount", "osrCount", "timeoutFlag")
 
 Environment = Callable[[int, int], int]
+HostReads = Callable[[int], bool]
 
 
 @dataclass
@@ -31,9 +33,11 @@ class Scenario:
     cycles: int
     environment: Environment = lambda cycle, outputs: 0
     hostWords: Sequence[int] = ()
+    hostReads: HostReads = lambda cycle: True
     syncBypass: int = 0
     idleInputs: int = 0
     allowReserved: bool = False
+    coverage: FunctionalCoverage | None = None
     received: list[int] = field(default_factory=list)
 
 
@@ -120,6 +124,36 @@ def rtlState(dut: Any) -> dict[str, int]:
     return state
 
 
+def executeSample(dut: Any) -> ExecuteSample | None:
+    coreInst = dut.coreInst
+    if not toInt(coreInst.execute.value):
+        return None
+    return ExecuteSample(
+        instr=toInt(coreInst.instr.value),
+        pc=toInt(coreInst.pc.value),
+        jmpTaken=bool(toInt(coreInst.jmpTaken.value)),
+        aluFirst=toInt(coreInst.aluFirst.value),
+        movSource=toInt(coreInst.movSource.value),
+        refill=bool(toInt(coreInst.refill.value)),
+        pushDue=bool(toInt(coreInst.pushDue.value)),
+        sideActive=bool(toInt(coreInst.sideActive.value)),
+        delay=toInt(coreInst.delay.value),
+        wasStalled=bool(toInt(coreInst.isStalled.value)),
+    )
+
+
+def stateSample(dut: Any) -> StateSample:
+    coreInst = dut.coreInst
+    return StateSample(
+        pc=toInt(coreInst.pc.value),
+        isStalled=bool(toInt(coreInst.isStalled.value)),
+        timeoutFlag=bool(toInt(coreInst.timeoutFlag.value)),
+        txLevel=toInt(dut.txLevel.value),
+        rxLevel=toInt(dut.rxLevel.value),
+        pinDir=toInt(dut.pinDir.value),
+    )
+
+
 def issState(machine: Machine) -> dict[str, int]:
     core = machine.cores[0]
     state = {name: int(getattr(core, name)) for name in stateNames}
@@ -140,6 +174,9 @@ async def runLockstep(dut: Any, scenario: Scenario) -> int:
     pending = deque(scenario.hostWords)
     dut.run.value = 1
     await RisingEdge(dut.clk)
+    await ReadOnly()
+    previous = stateSample(dut)
+    wrap = (scenario.program.wrapBottom, scenario.program.wrapTop)
     for cycle in range(scenario.cycles):
         await FallingEdge(dut.clk)
         inputs = scenario.environment(cycle, machine.outputs)
@@ -147,7 +184,7 @@ async def runLockstep(dut: Any, scenario: Scenario) -> int:
         isWrite = bool(pending) and core.hostWrite(pending[0])
         dut.txWriteEn.value = int(isWrite)
         dut.txWriteData.value = pending.popleft() if isWrite else 0
-        word = core.hostRead()
+        word = core.hostRead() if scenario.hostReads(cycle) else None
         dut.rxReadEn.value = int(word is not None)
         if word is not None:
             assert toInt(dut.rxReadData.value) == word, f"cycle {cycle}: RX FIFO head"
@@ -158,8 +195,16 @@ async def runLockstep(dut: Any, scenario: Scenario) -> int:
             if not scenario.allowReserved:
                 raise
             return cycle
+        before = None
+        if scenario.coverage is not None:
+            await ReadOnly()
+            before = executeSample(dut)
         await RisingEdge(dut.clk)
         await ReadOnly()
+        if scenario.coverage is not None:
+            after = stateSample(dut)
+            scenario.coverage.sample(before, after, previous, wrap)
+            previous = after
         expected = issState(machine)
         actual = rtlState(dut)
         mismatches = {
@@ -328,8 +373,9 @@ async def testDirectedProgramsLockstep(dut: Any) -> None:
 async def testRandomProgramsLockstep(dut: Any) -> None:
     startClock(dut)
     seedBase = int(os.environ.get("LOCKSTEP_SEED_BASE", "1"))
-    seedCount = int(os.environ.get("LOCKSTEP_SEEDS", "20"))
+    seedCount = int(os.environ.get("LOCKSTEP_SEEDS", "50"))
     cycles = int(os.environ.get("LOCKSTEP_CYCLES", "300"))
+    coverage = FunctionalCoverage()
     for seed in range(seedBase, seedBase + seedCount):
         generated = randomScenario(seed)
         scenario = Scenario(
@@ -338,9 +384,14 @@ async def testRandomProgramsLockstep(dut: Any) -> None:
             cycles,
             environment=randomEnvironment(seed, generated),
             hostWords=generated.hostWords,
+            hostReads=randomHostReads(seed, generated),
             syncBypass=generated.syncBypass,
             idleInputs=generated.idleInputs,
             allowReserved=True,
+            coverage=coverage,
         )
         checked = await runLockstep(dut, scenario)
         dut._log.info("seed %d: %d cycles checked", seed, checked)
+    for line in coverage.report():
+        dut._log.info("coverage %s", line)
+    dut._log.info("coverage holes: %s", ", ".join(coverage.holes()) or "none")
