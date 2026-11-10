@@ -1,6 +1,6 @@
 # Area Log
 
-This file records the area and timing of each hardened design. Add 1 row after each harden.
+This file records the area and timing of each hardened design.
 
 Procedure:
 
