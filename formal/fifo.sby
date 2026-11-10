@@ -1,0 +1,23 @@
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc: mode bmc
+bmc: depth 20
+prove: mode prove
+prove: depth 4
+cover: mode cover
+cover: depth 16
+
+[engines]
+smtbmc yices
+
+[script]
+read -formal fifo.v
+chparam -set dataWidth 4 fifo
+prep -top fifo
+
+[files]
+../src/fifo.v

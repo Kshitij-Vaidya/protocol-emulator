@@ -56,4 +56,60 @@ module fifo #(
             entries[writePtr] <= pushData;
     end
 
+`ifdef FORMAL
+    reg                  pastValid = 1'b0;
+    reg [dataWidth-1:0]  model [0:depth-1];
+    reg [countWidth-1:0] modelCount;
+
+    wire [ptrWidth-1:0]   modelTail = modelCount - doPop;
+    wire [countWidth-1:0] countNext = countQ + doPush - doPop;
+
+    integer slot;
+
+    always @(posedge clk) begin
+        pastValid <= 1'b1;
+        if (!rstN || clear) begin
+            modelCount <= {countWidth{1'b0}};
+        end else begin
+            if (doPop)
+                for (slot = 0; slot < depth - 1; slot = slot + 1)
+                    model[slot] <= model[slot + 1];
+            if (doPush)
+                model[modelTail] <= pushData;
+            modelCount <= countNext;
+        end
+    end
+
+    always @(*) begin
+        if (!pastValid)
+            assume (!rstN);
+        assert (depth == (1 << ptrWidth));
+        if (pastValid) begin
+            assert (countQ <= fullCount);
+            assert (countQ == modelCount);
+            assert (writePtr == readPtr + countQ[ptrWidth-1:0]);
+            if (!empty)
+                assert (headData == model[0]);
+        end
+    end
+
+    genvar position;
+    generate
+        for (position = 0; position < depth; position = position + 1) begin : entryCheck
+            wire [ptrWidth-1:0] slotPtr = readPtr + position;
+            always @(*)
+                if (pastValid && position < countQ)
+                    assert (entries[slotPtr] == model[position]);
+        end
+    endgenerate
+
+    wire active = pastValid && rstN && !clear;
+
+    always @(*) begin
+        cover (active && full && pushEn && popEn);
+        cover (active && empty && popEn);
+        cover (active && doPush && doPop && countQ == 2);
+    end
+`endif
+
 endmodule
