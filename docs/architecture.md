@@ -179,7 +179,7 @@ The source is the harden of `da32192` (run 42773958557). `docs/area_log.md` has 
 | `pc` | +4.024 ns |
 
 ### Configuration for timing
-`src/config.json` sets these values:
+`src/config.json` sets these values (ADR-0008):
 
 - Timing-driven placement (`PL_TIMING_DRIVEN`).
 - Timing repair and design repair after global routing.

@@ -14,3 +14,4 @@ ADR-NNNN.
 | [0005](0005-host-interface.md) | Host interface | Accepted |
 | [0006](0006-program-load-path.md) | Program-load path | Accepted |
 | [0007](0007-clock-target.md) | Clock target | Accepted |
+| [0008](0008-timing-closure.md) | Timing closure | Accepted |
