@@ -152,12 +152,19 @@ module core (
     reg  [dataWidth-1:0] aluFirst;
     reg  [dataWidth-1:0] movResult;
     wire [dataWidth-1:0] movReversed;
+    wire                 aluSubtract = ops[5];
+    wire [dataWidth-1:0] aluSum      = prefixAdd(aluFirst, aluSubtract ? ~movSource : movSource, aluSubtract);
 
     reg                  jmpTaken;
     reg                  waitLevel;
     wire [dataWidth-1:0] waitStart = stalled ? waitTicks : t;
     wire [4:0]           setWidth  = {2'b0, setCount};
     wire [dataWidth-1:0] setData   = {10'b0, ops[5:0]};
+
+    wire                 pinWriteSet   = (opcode == opSet);
+    wire [4:0]           pinWriteBase  = pinWriteSet ? setBase : outBase;
+    wire [4:0]           pinWriteCount = pinWriteSet ? setWidth : outCount;
+    wire [dataWidth-1:0] pinWriteValue = pinWriteSet ? setData : (opcode == opOut) ? outData : movResult;
 
     genvar bitIdx;
     generate
@@ -179,6 +186,29 @@ module core (
         input [4:0]  amount;
         begin
             rotateRight = (value >> amount) | (value << (6'd32 - {1'b0, amount}));
+        end
+    endfunction
+
+    function [15:0] prefixAdd;
+        input [15:0] first;
+        input [15:0] second;
+        input        carryIn;
+        reg   [15:0] groupGen;
+        reg   [15:0] groupProp;
+        reg   [15:0] carries;
+        integer      span;
+        integer      bitPos;
+        begin
+            groupGen  = first & second;
+            groupProp = first ^ second;
+            groupGen[0] = groupGen[0] | (groupProp[0] & carryIn);
+            for (span = 1; span < 16; span = span * 2)
+                for (bitPos = 15; bitPos >= span; bitPos = bitPos - 1) begin
+                    groupGen[bitPos]  = groupGen[bitPos] | (groupProp[bitPos] & groupGen[bitPos-span]);
+                    groupProp[bitPos] = groupProp[bitPos] & groupProp[bitPos-span];
+                end
+            carries   = {groupGen[14:0], carryIn};
+            prefixAdd = first ^ second ^ carries;
         end
     endfunction
 
@@ -290,8 +320,8 @@ module core (
             3'd0:    movResult = movSource;
             3'd1:    movResult = ~movSource;
             3'd2:    movResult = movReversed;
-            3'd3:    movResult = aluFirst + movSource;
-            3'd4:    movResult = aluFirst - movSource;
+            3'd3,
+            3'd4:    movResult = aluSum;
             3'd5:    movResult = aluFirst & movSource;
             3'd6:    movResult = aluFirst | movSource;
             default: movResult = aluFirst ^ movSource;
@@ -378,10 +408,10 @@ module core (
                         osrNext      = osrShifted[15:0];
                         osrCountNext = outSat;
                         case (ops[8:6])
-                            3'd0: pinOutNext = writeField(pinOutNext, outBase, outCount, outData);
+                            3'd0: pinOutNext = writeField(pinOutNext, pinWriteBase, pinWriteCount, pinWriteValue);
                             3'd1: xNext = outData;
                             3'd2: yNext = outData;
-                            3'd4: pinDirNext = writeField(pinDirNext, outBase, outCount, outData);
+                            3'd4: pinDirNext = writeField(pinDirNext, pinWriteBase, pinWriteCount, pinWriteValue);
                             3'd5: begin
                                 jumpEn     = 1'b1;
                                 jumpTarget = outData[7:0];
@@ -430,7 +460,7 @@ module core (
                 opMov: begin
                     complete = 1'b1;
                     case (ops[8:6])
-                        3'd0: pinOutNext = writeField(pinOutNext, outBase, outCount, movResult);
+                        3'd0: pinOutNext = writeField(pinOutNext, pinWriteBase, pinWriteCount, pinWriteValue);
                         3'd1: xNext = movResult;
                         3'd2: yNext = movResult;
                         3'd3: tNext = movResult;
@@ -455,11 +485,11 @@ module core (
                 opSet: begin
                     complete = 1'b1;
                     case (ops[8:6])
-                        3'd0: pinOutNext = writeField(pinOutNext, setBase, setWidth, setData);
+                        3'd0: pinOutNext = writeField(pinOutNext, pinWriteBase, pinWriteCount, pinWriteValue);
                         3'd1: xNext = setData;
                         3'd2: yNext = setData;
                         3'd3: tNext = setData;
-                        3'd4: pinDirNext = writeField(pinDirNext, setBase, setWidth, setData);
+                        3'd4: pinDirNext = writeField(pinDirNext, pinWriteBase, pinWriteCount, pinWriteValue);
                         default: ;
                     endcase
                 end

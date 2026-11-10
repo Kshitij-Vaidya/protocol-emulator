@@ -52,7 +52,7 @@ module fifo #(
     end
 
     always @(posedge clk) begin
-        if (doPush)
+        if (!full)
             entries[writePtr] <= pushData;
     end
 
