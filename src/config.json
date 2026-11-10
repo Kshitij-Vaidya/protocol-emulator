@@ -45,7 +45,8 @@
   "MACROS": {
     "RM_IHPSG13_1P_256x16_c2_bm_bist": {
       "instances": {
-        "progMemInst.sram": { "location": [3.36, 3.78], "orientation": "FS" }
+        "coreSlice0.progMemInst.sram": { "location": [3.36, 3.78], "orientation": "FS" },
+        "coreSlice1.progMemInst.sram": { "location": [273.12, 3.78], "orientation": "FS" }
       },
       "gds": ["pdk_dir::libs.ref/sg13cmos5l_sram/gds/RM_IHPSG13_1P_256x16_c2_bm_bist.gds"],
       "lef": ["pdk_dir::libs.ref/sg13cmos5l_sram/lef/RM_IHPSG13_1P_256x16_c2_bm_bist.lef"],
@@ -58,8 +59,10 @@
   },
 
   "PDN_MACRO_CONNECTIONS": [
-    "progMemInst.sram VPWR VGND VDD! VSS!",
-    "progMemInst.sram VPWR VGND VDDARRAY! VSS!"
+    "coreSlice0.progMemInst.sram VPWR VGND VDD! VSS!",
+    "coreSlice0.progMemInst.sram VPWR VGND VDDARRAY! VSS!",
+    "coreSlice1.progMemInst.sram VPWR VGND VDD! VSS!",
+    "coreSlice1.progMemInst.sram VPWR VGND VDDARRAY! VSS!"
   ],
 
   "PDN_CFG": "dir::pdn_cfg.tcl",

@@ -105,6 +105,21 @@ async def testHostExecuteRunsOneInstruction(dut: Dut) -> None:
 
 
 @cocotb.test()
+async def testSecondCoreExecutesAndDrivesPins(dut: Dut) -> None:
+    await resetDut(dut)
+    await writeRegister(dut, Register.coreSel, [1])
+    await writeRegister(dut, Register.pinSet, [1 << 8])
+    for line in ("set pindirs, 1", "set pins, 1", "set x, 5", "mov isr, x", "push"):
+        await writeRegister(dut, Register.execute, assemble(line).words)
+    assert int(dut.uio_oe.value) & 1
+    assert int(dut.uio_out.value) & 1
+    assert await readOne(dut, Register.rxFifo) == 5
+    await writeRegister(dut, Register.coreSel, [0])
+    await writeRegister(dut, Register.execute, assemble("set x, 3").words)
+    assert await readOne(dut, Register.rxFifo) == 0
+
+
+@cocotb.test()
 async def testRxFifoBurstReadsInOrder(dut: Dut) -> None:
     await resetDut(dut)
     for value in (3, 5, 7, 9):

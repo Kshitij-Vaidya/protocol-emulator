@@ -5,11 +5,12 @@ project:
   description:  "Programmable I/O processor: a core with deterministic timing emulates protocols in firmware"
   language:     "Verilog"
   clock_hz:     50000000
-  tiles: "4x2"
+  tiles: "8x2"
   top_module:  "tt_um_protocolEmulator"
   source_files:
     - "tt_um_protocolEmulator.v"
     - "hostSpi.v"
+    - "coreSlice.v"
     - "core.v"
     - "fifo.v"
     - "pinSync.v"

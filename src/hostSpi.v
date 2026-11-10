@@ -12,6 +12,7 @@ module hostSpi (
     input  wire [7:0]  flags,
     output wire        run,
     output wire        restart,
+    output wire        coreSel,
     output wire [7:0]  startPc,
     output wire [15:0] clkDiv,
     output wire [4:0]  outBase,
@@ -65,6 +66,7 @@ module hostSpi (
     localparam [6:0] regBypassLow  = 7'h0F;
     localparam [6:0] regBypassHigh = 7'h10;
     localparam [6:0] regId         = 7'h11;
+    localparam [6:0] regCoreSel    = 7'h12;
 
     localparam [15:0] idValue       = 16'h5045;
     localparam [15:0] shiftReset    = 16'b0010_0001_0000_0011;
@@ -87,6 +89,7 @@ module hostSpi (
     reg  [15:0] readValue;
 
     reg         runQ;
+    reg         coreSelQ;
     reg         rejected;
     reg  [7:0]  memAddrQ;
     reg  [7:0]  startPcQ;
@@ -109,6 +112,7 @@ module hostSpi (
     assign miso          = shiftOut[15];
     assign run           = runQ;
     assign restart       = writeWord && (regAddr == regCtrl) && shiftIn[1];
+    assign coreSel       = coreSelQ;
     assign startPc       = startPcQ;
     assign clkDiv        = clkDivQ;
     assign outBase       = pinOutQ[4:0];
@@ -157,6 +161,7 @@ module hostSpi (
             regBypassLow:  readValue = syncBypassQ[15:0];
             regBypassHigh: readValue = syncBypassQ[31:16];
             regId:         readValue = idValue;
+            regCoreSel:    readValue = {15'd0, coreSelQ};
             default:       readValue = 16'd0;
         endcase
     end
@@ -215,6 +220,7 @@ module hostSpi (
     always @(posedge clk) begin
         if (!rstN) begin
             runQ        <= 1'b0;
+            coreSelQ    <= 1'b0;
             rejected    <= 1'b0;
             memAddrQ    <= 8'd0;
             startPcQ    <= 8'd0;
@@ -256,6 +262,7 @@ module hostSpi (
                 end
                 regBypassLow:  syncBypassQ[15:0] <= shiftIn;
                 regBypassHigh: syncBypassQ[31:16] <= shiftIn;
+                regCoreSel:    coreSelQ <= shiftIn[0];
                 default: ;
             endcase
         end else if (readWord && regAddr == regMemData) begin

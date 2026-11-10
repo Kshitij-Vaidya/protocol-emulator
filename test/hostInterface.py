@@ -55,6 +55,7 @@ class Register(IntEnum):
     bypassLow = 0x0F
     bypassHigh = 0x10
     id = 0x11
+    coreSel = 0x12
 
 
 class Status(IntEnum):
