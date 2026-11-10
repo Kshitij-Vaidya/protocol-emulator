@@ -1,3 +1,4 @@
+import os
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -9,9 +10,10 @@ from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, RisingEdge
 
 from asm.assembler import Program, assemble
-from iss.core import CoreConfig
+from iss.core import CoreConfig, IssError
 from iss.machine import Machine, bidirectionalMask, outputOnlyMask
 from iss.models import SpiTarget, UartFrame, UartSource
+from programGenerator import randomEnvironment, randomScenario
 
 examplesDir = Path(__file__).resolve().parent.parent / "sw" / "asm" / "examples"
 clkPeriodNs = 20
@@ -31,6 +33,7 @@ class Scenario:
     hostWords: Sequence[int] = ()
     syncBypass: int = 0
     idleInputs: int = 0
+    allowReserved: bool = False
     received: list[int] = field(default_factory=list)
 
 
@@ -128,9 +131,11 @@ def issState(machine: Machine) -> dict[str, int]:
     return state
 
 
-async def runLockstep(dut: Any, scenario: Scenario) -> None:
+async def runLockstep(dut: Any, scenario: Scenario) -> int:
     await resetAndLoad(dut, scenario)
-    machine = Machine([(scenario.program, scenario.config)], scenario.syncBypass)
+    machine = Machine(
+        [(scenario.program, scenario.config)], scenario.syncBypass, scenario.idleInputs
+    )
     core = machine.cores[0]
     pending = deque(scenario.hostWords)
     dut.run.value = 1
@@ -147,7 +152,12 @@ async def runLockstep(dut: Any, scenario: Scenario) -> None:
         if word is not None:
             assert toInt(dut.rxReadData.value) == word, f"cycle {cycle}: RX FIFO head"
             scenario.received.append(word)
-        machine.step(inputs)
+        try:
+            machine.step(inputs)
+        except IssError:
+            if not scenario.allowReserved:
+                raise
+            return cycle
         await RisingEdge(dut.clk)
         await ReadOnly()
         expected = issState(machine)
@@ -158,6 +168,7 @@ async def runLockstep(dut: Any, scenario: Scenario) -> None:
             if actual[name] != expected[name]
         }
         assert not mismatches, f"cycle {cycle}: (rtl, iss) {mismatches}"
+    return scenario.cycles
 
 
 @cocotb.test()
@@ -311,3 +322,25 @@ async def testDirectedProgramsLockstep(dut: Any) -> None:
         scenario = Scenario(assemble(source), config, 80, hostWords=[execWord, 0x1234, 0xBEEF])
         dut._log.info("directed program %s", name)
         await runLockstep(dut, scenario)
+
+
+@cocotb.test()
+async def testRandomProgramsLockstep(dut: Any) -> None:
+    startClock(dut)
+    seedBase = int(os.environ.get("LOCKSTEP_SEED_BASE", "1"))
+    seedCount = int(os.environ.get("LOCKSTEP_SEEDS", "20"))
+    cycles = int(os.environ.get("LOCKSTEP_CYCLES", "300"))
+    for seed in range(seedBase, seedBase + seedCount):
+        generated = randomScenario(seed)
+        scenario = Scenario(
+            generated.program,
+            generated.config,
+            cycles,
+            environment=randomEnvironment(seed, generated),
+            hostWords=generated.hostWords,
+            syncBypass=generated.syncBypass,
+            idleInputs=generated.idleInputs,
+            allowReserved=True,
+        )
+        checked = await runLockstep(dut, scenario)
+        dut._log.info("seed %d: %d cycles checked", seed, checked)

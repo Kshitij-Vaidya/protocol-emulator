@@ -14,13 +14,18 @@ Environment = Callable[[int, int], int]
 
 class Machine:
     def __init__(
-        self, cores: Sequence[tuple[Program, CoreConfig]], syncBypass: int = 0
+        self,
+        cores: Sequence[tuple[Program, CoreConfig]],
+        syncBypass: int = 0,
+        idleInputs: int | None = None,
     ) -> None:
         self.flags = FlagBank()
         self.cores = [Core(program, config, self.flags) for program, config in cores]
         self.cycle = 0
         self.syncBypass = syncBypass & inputMask
         self._syncPipe: deque[int] = deque()
+        if idleInputs is not None:
+            self._syncPipe.extend([idleInputs & inputMask] * syncStages)
 
     @property
     def outputEnables(self) -> int:
