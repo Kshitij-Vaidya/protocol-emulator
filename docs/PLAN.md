@@ -41,17 +41,17 @@ Terms:
 
 ## Milestones
 
-| # | Milestone | Target date | Exit criteria |
-|---|---|---|---|
-| M0 | Tools and first flow run | 2026-10-25 | The UART transmitter in `src/` passes a self-checking cocotb test. It hardens to GDS with the ttihp template workflows in GitHub Actions. |
-| M1 | Architecture and ISA v0.1 | 2026-11-08 | First versions of `architecture.md` and `isa.md` exist. The ISS and assembler run UART TX, UART RX, and SPI master firmware against Python protocol models. |
-| M2 | Core RTL v1 | 2026-11-22 | The RTL core executes ISA v0.1. Lockstep tests pass on directed programs. The real design hardens, and an area report exists. |
-| M3 | Verification infrastructure | 2026-11-29 | A constrained-random program generator, lockstep tests, functional coverage, and first formal proofs exist. UART and SPI firmware pass against cocotbext models. |
-| M4 | I2C and physical-design check | 2026-12-06 | I2C operates (open-drain, clock stretch). The design meets the target clock in STA. It fits in the selected tile size (8x4 maximum) with routing margin. |
-| M5 | Feature complete (**freeze**) | 2026-12-20 | The selected stretch protocols operate. The host interface and program-load interface are final. ISA v1.0 is frozen. |
-| M6 | Verification closure | 2027-01-03 | Coverage goals are met. Formal properties are proven. Gate-level simulations pass. All bugs are fixed or have a triage decision. |
-| M7 | Ready for tapeout | 2027-01-10 | The official flow makes a clean GDS. `info.yaml` and the documentation are complete. Demo firmware and a README exist. |
-| M8 | Submit | 2027-01-11 → 18 | The design is submitted with buffer time. The report is published. |
+| # | Milestone | Target date | Exit criteria | Status |
+|---|---|---|---|---|
+| M0 | Tools and first flow run | 2026-10-25 | The UART transmitter in `src/` passes a self-checking cocotb test. It hardens to GDS with the ttihp template workflows in GitHub Actions. | Done (2026-10-18). |
+| M1 | Architecture and ISA v0.1 | 2026-11-08 | First versions of `architecture.md` and `isa.md` exist. The ISS and assembler run UART TX, UART RX, and SPI master firmware against Python protocol models. | Done (2026-11-08). |
+| M2 | Core RTL v1 | 2026-11-22 | The RTL core executes ISA v0.1. Lockstep tests pass on directed programs. The real design hardens, and an area report exists. | Done (2026-11-10). The core, `hostSpi`, and the FIFO have no separate cocotb unit tests. The lockstep, host, and formal tests cover them. |
+| M3 | Verification infrastructure | 2026-11-29 | A constrained-random program generator, lockstep tests, functional coverage, and first formal proofs exist. UART and SPI firmware pass against cocotbext models. | Done (2026-11-11). 1000 random seeds match the ISS. Coverage is 122 of 122 bins. The FIFO and core control proofs pass. |
+| M4 | I2C and physical-design check | 2026-12-06 | I2C operates (open-drain, clock stretch). The design meets the target clock in STA. It fits in the selected tile size (8x4 maximum) with routing margin. | In progress. STA passes with +3.167 ns. ADR-0009 selects 8x4. I2C is not started. |
+| M5 | Feature complete (**freeze**) | 2026-12-20 | The selected stretch protocols operate. The host interface and program-load interface are final. ISA v1.0 is frozen. | Not started. |
+| M6 | Verification closure | 2027-01-03 | Coverage goals are met. Formal properties are proven. Gate-level simulations pass. All bugs are fixed or have a triage decision. | Not started. |
+| M7 | Ready for tapeout | 2027-01-10 | The official flow makes a clean GDS. `info.yaml` and the documentation are complete. Demo firmware and a README exist. | Not started. |
+| M8 | Submit | 2027-01-11 → 18 | The design is submitted with buffer time. The report is published. | Not started. |
 
 ---
 
@@ -197,9 +197,9 @@ Write an ADR for each decision.
 |---|---|---|---|
 | HDL | Verilog-2005, SystemVerilog subset, Hardcaml, Amaranth | Week 1 | Accepted: synthesizable Verilog-2005 with SV assertions for formal. Refer to ADR-0001. |
 | Program memory | Flip-flops, latches, or an IHP SRAM macro | Week 2 | Accepted: 1-port SRAM macro, 256 × 16, with a flip-flop fallback behind `progMem`. Refer to ADR-0002. |
-| Tile size | 6x4 or 8x4 | Week 5 | 8x4 is confirmed for the March shuttle. No cell count limit applies. Use the smallest size that meets the target utilization. |
+| Tile size | 6x4 or 8x4 | Week 5 | Accepted: 8x4, because 2 cores do not route in 8x2. `main` keeps 4x2 until the multi-core RTL merges. Refer to ADR-0009. |
 | Program-load path | Serial load on the Tiny Tapeout inputs, SPI flash, or host writes on `uio` | Week 2 | Accepted: host writes through the host interface, only while the core is halted. Refer to ADR-0006. |
-| Number of cores | 1 core, N small state machines (as in PIO), or 1 core with helper units | Week 2; select N in week 5 | Accepted: 1 core for M2; N cores (2–4), each with its own macro, in M5. Refer to ADR-0003. |
+| Number of cores | 1 core, N small state machines (as in PIO), or 1 core with helper units | Week 2; select N in week 5 | Accepted: 1 core for M2; 2 cores, each with its own macro, in M5. 3 or 4 cores only after a passing experiment harden. Refer to ADR-0003 and ADR-0009. |
 | Clock target | Calculated from the protocol table and the STA results on IHP | Week 2; check again in week 7 | Accepted: STA at 20 ns (50 MHz); operation at 50 MHz or less; demo at 48 MHz. Refer to ADR-0007. |
 | Timing model | 1 cycle for each instruction (as in PIO), or variable timing with a delay field | Week 3 | Accepted: PIO model with an integer clock divider and a `WAIT` with a timeout. Refer to ADR-0004. |
 | Host interface | TX and RX FIFOs (as in PIO), register window, or mailbox | Week 3 | Accepted: SPI target (mode 0) with a register map. Refer to ADR-0005. |
