@@ -175,3 +175,18 @@ async def testSpiFirmwareExchangesBytesWithLoopbackTarget(dut: Dut) -> None:
     assert [word & byteMask for word in words] == [0x00, *sent[:-1]]
     assert await target.get_contents() == sent[-1]
     assert int(dut.pin11.value) == 1
+
+
+@cocotb.test()
+async def testClockDividerWriteWhileRunningTakesEffect(dut: Dut) -> None:
+    await resetDut(dut)
+    program = assemble(".wrap_target\nset pins, 1\nset pins, 0\n.wrap\n")
+    config = CoreConfig(clkDiv=60000, setBase=txPin, setCount=1)
+    await startProgram(dut, program, config)
+    await ClockCycles(dut.clk, 2000)
+    await writeRegister(dut, Register.clkDiv, [1])
+    levels = set()
+    for _ in range(200):
+        await ClockCycles(dut.clk, 1)
+        levels.add(int(dut.pin8.value))
+    assert levels == {0, 1}

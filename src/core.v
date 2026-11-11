@@ -107,6 +107,8 @@ module core (
 
     wire                 hostExec  = hostExecEn && !activeQ;
     wire                 tick      = activeQ && (divCount == 16'd0);
+    wire                 halting   = activeQ && !run;
+    wire [15:0]          divLimit  = (clkDiv == 16'd0) ? 16'd0 : clkDiv - 1'b1;
     wire                 execute   = (tick && (delayCount == 4'd0)) || hostExec;
     wire                 stalled   = isStalled && !hostExec;
     wire [dataWidth-1:0] coreInstr = pendingExecValid ? pendingExec : fetchData;
@@ -557,7 +559,7 @@ module core (
             pinDir           <= 32'd0;
         end else begin
             activeQ          <= run;
-            divCount         <= (!activeQ || divCount == clkDiv - 1'b1) ? 16'd0 : divCount + 1'b1;
+            divCount         <= (!activeQ || divCount >= divLimit) ? 16'd0 : divCount + 1'b1;
             delayCount       <= delayCountNext;
             pc               <= pcNext;
             x                <= xNext;
@@ -575,6 +577,11 @@ module core (
             flags            <= flagsNext;
             pinOut           <= pinOutNext;
             pinDir           <= pinDirNext;
+            if (halting) begin
+                delayCount       <= 4'd0;
+                isStalled        <= 1'b0;
+                pendingExecValid <= 1'b0;
+            end
         end
     end
 
@@ -589,32 +596,33 @@ module core (
     always @(*) begin
         if (!pastValid)
             assume (!rstN);
-        assume (clkDiv != 16'd0);
         assert (!(hostExec && tick));
         if (running) begin
             assert (isrCount <= fullCount);
             assert (osrCount <= fullCount);
-            assert (!activeQ || divCount < clkDiv);
         end
     end
 
     always @(posedge clk) begin
         if (pastValid) begin
-            assume ($stable(clkDiv));
             if ($past(!rstN))
                 assert (pc == 8'd0 && !activeQ && !isStalled && !pendingExecValid);
             if ($past(rstN && restart))
                 assert (pc == $past(startPc) && !activeQ && delayCount == 4'd0 && !isStalled
                         && !pendingExecValid && flags == 8'd0 && pinDir == 32'd0);
-            if ($past(running && !execute)) begin
+            if ($past(running) && $stable(clkDiv))
+                assert (!activeQ || divCount <= divLimit);
+            if ($past(running && halting))
+                assert (!isStalled && delayCount == 4'd0 && !pendingExecValid);
+            if ($past(running && !execute && !halting)) begin
                 assert ($stable(pc) && $stable(x) && $stable(y) && $stable(t));
                 assert ($stable(isr) && $stable(osr) && $stable(isrCount) && $stable(osrCount));
                 assert ($stable(flags) && $stable(pinOut) && $stable(pinDir));
                 assert ($stable(pendingExecValid) && $stable(isStalled));
             end
-            if ($past(running && tick && delayCount != 4'd0))
+            if ($past(running && tick && delayCount != 4'd0 && !halting))
                 assert (delayCount == $past(delayCount) - 4'd1);
-            if ($past(running && !tick && !execute))
+            if ($past(running && !tick && !execute && !halting))
                 assert ($stable(delayCount));
             if ($past(running && execute && !hostExec) && isStalled)
                 assert ($stable(pc) && delayCount == 4'd0);
