@@ -20,6 +20,8 @@ the fast corner. The clock period is 20 ns (50 MHz).
 | 2026-11-09 | e4bd186 | 42650467327 | 8811 | 113193.00 | 54.39 | 0.123 | 0.117 | n/a | 0 | M2. 4x2 tile. Core, `hostSpi`, and `progMem`. Timing-driven placement, post-GRT repair, and a 3 ns resizer setup margin. Magic DRC off; precheck and GL test pass. |
 | 2026-11-10 | ae5afdc | 42762426143 | 8782 | 114140.00 | 54.75 | 0.384 | 0.132 | n/a | 0 | M2. 4x2 tile. One shared pin write rotator, a prefix adder for ADD and SUB, and a FIFO write enable from `full` only. Magic DRC off; precheck and GL test pass. |
 | 2026-11-10 | da32192 | 42773958557 | 9190 | 118361.00 | 56.38 | 3.167 | 0.146 | n/a | 0 | M2. 4x2 tile. Resizer margins after global routing: 6 ns for setup, 0.15 ns for hold. Magic DRC off; precheck and GL test pass. |
+| 2026-11-10 | 186ddbb | 42825292322 | n/a | n/a | 44.86 | n/a | n/a | n/a | n/a | Experiment `twoCoreArea`. 2 cores in an 8x2 tile, macros side by side. Detailed routing did not converge (about 2,200 violations after 50 iterations). The 6-hour job limit cancelled the run. |
+| 2026-11-11 | 813c297 | 43026840961 | 15138 | 195630.00 | 20.85 | 3.994 | 0.147 | n/a | 0 | Experiment `twoCoreArea`. 2 cores in an 8x4 tile, macros at x = 3.36 µm and 857.60 µm. 20 detailed routing iterations. Magic DRC off; precheck and GL test pass. |
 
 ## Budget
 
