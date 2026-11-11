@@ -36,7 +36,7 @@ Each core also has these parts:
 |---|---|
 | TX FIFO, RX FIFO | 4 words of 16 bits each. The host writes the TX FIFO and reads the RX FIFO. |
 | Shift counters | 0–16 bits shifted out of `OSR` and into `ISR`, for autopull and autopush |
-| Clock divider | 16-bit integer `clkDiv` (1–65535). 1 means 1 tick on each core clock cycle. |
+| Clock divider | 16-bit integer `clkDiv` (1–65535). 1 means 1 tick on each core clock cycle. 0 has the same effect as 1. A new value takes effect within 1 tick. |
 | Wrap registers | `wrapTop` and `wrapBottom`. After the instruction at `wrapTop`, the PC goes to `wrapBottom` with no cycle cost. |
 | Pin mapping | `outBase`/`outCount`, `setBase`/`setCount`, `sideBase`/`sideCount`, `inBase`, `jmpPin`, as in PIO |
 | Side-set configuration | `sideCount` (0–3 bits), `sideEn` (optional enable bit), `sidePinDir` (drive the levels or the directions) |

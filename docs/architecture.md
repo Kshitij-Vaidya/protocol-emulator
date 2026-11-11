@@ -74,6 +74,23 @@ The "Timing budget" section has the slack of each register group.
 A write of 1 to `CTRL.restart` resets the core state. The PC gets `START_PC`. The FIFOs, the
 flags, and the pin registers get 0.
 
+### Halt
+1. The host writes `CTRL` with `run` set to 0.
+2. On the next cycle, the core can complete 1 more instruction.
+3. The core then clears the stall, the remaining delay, and the pending `EXEC` instruction.
+   The PC, the registers, the FIFOs, and the pins keep their values.
+
+A later write of 1 to `run` starts a new instruction at the PC. Thus a `WAIT` or a delay
+that the halt stopped starts again from the beginning.
+
+### Pin levels at reset
+Reset and `CTRL.restart` set the pin output and direction registers to 0. An output-only pin
+(8–14) drives 0 until the firmware sets it.
+
+CAUTION: Do not put an active-low select, for example SPI CS, on pins 8–14 if the target
+must stay deselected while the host loads the program. Use a pin from 0 to 7 with an
+external pull-up. The pin is an input until the firmware sets its direction.
+
 ### Timing rules
 The core RTL obeys the timing rules in `sw/iss/README.md`. The lockstep test
 (`test/testCoreLockstep.py`) compares the RTL with the ISS after each cycle.
@@ -106,7 +123,7 @@ through 2-flop synchronizers, and MISO changes up to 6 cycles after the SCK risi
 | 0x03 | `MEM_DATA` | R/W | Program memory word at `MEM_ADDR`. Each access increments `MEM_ADDR`. |
 | 0x04 | `START_PC` | R/W | [7:0] PC after `restart` |
 | 0x05 | `EXEC` | W | The core executes this instruction 1 time. The core must be halted. |
-| 0x06 | `CLK_DIV` | R/W | [15:0] `clkDiv`. Reset value: 1. |
+| 0x06 | `CLK_DIV` | R/W | [15:0] `clkDiv`. Reset value: 1. A write takes effect within 1 tick, also while the core runs. 0 has the same effect as 1. |
 | 0x07 | `PIN_OUT` | R/W | [4:0] `outBase`. [12:8] `outCount`. |
 | 0x08 | `PIN_SET` | R/W | [4:0] `setBase`. [10:8] `setCount`. |
 | 0x09 | `PIN_SIDE` | R/W | [4:0] `sideBase`. [9:8] `sideCount`. [10] `sideEn`. [11] `sidePinDir`. |
