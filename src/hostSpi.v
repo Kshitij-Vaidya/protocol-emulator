@@ -313,4 +313,26 @@ module hostSpi #(
         end
     endgenerate
 
+`ifdef FORMAL
+    reg pastValid = 1'b0;
+
+    always @(posedge clk)
+        pastValid <= 1'b1;
+
+    always @(*) begin
+        if (!pastValid)
+            assume (!rstN);
+        assert ((memWriteEn & (memWriteEn - 1'b1)) == {numCores{1'b0}});
+        assert ((hostExecEn & (hostExecEn - 1'b1)) == {numCores{1'b0}});
+        assert ((txWriteEn & (txWriteEn - 1'b1)) == {numCores{1'b0}});
+        assert ((rxReadEn & (rxReadEn - 1'b1)) == {numCores{1'b0}});
+        if (!selValid)
+            assert ((memWriteEn | hostExecEn | txWriteEn | rxReadEn) == {numCores{1'b0}});
+        if (|(memWriteEn | hostExecEn | txWriteEn | rxReadEn))
+            assert (wordDone);
+        if (|restart)
+            assert (writeWord && (regAddr == regCtrl || regAddr == regRunAll));
+    end
+`endif
+
 endmodule

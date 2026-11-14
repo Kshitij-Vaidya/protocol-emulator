@@ -1,0 +1,21 @@
+[tasks]
+bmc
+prove
+
+[options]
+bmc: mode bmc
+bmc: depth 12
+prove: mode prove
+prove: depth 4
+
+[engines]
+smtbmc yices
+
+[script]
+read -formal hostSpi.v
+read -formal flagBank.v
+prep -top hostSpi
+
+[files]
+../src/hostSpi.v
+../src/flagBank.v

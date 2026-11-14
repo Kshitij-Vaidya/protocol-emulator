@@ -18,4 +18,19 @@ module flagBank #(
             flags <= (flags & ~clears) | sets;
     end
 
+`ifdef FORMAL
+    reg pastValid = 1'b0;
+
+    always @(posedge clk) begin
+        pastValid <= 1'b1;
+        if (pastValid && $past(rstN && !clear)) begin
+            assert ((flags & $past(sets)) == $past(sets));
+            assert ((flags & $past(clears & ~sets)) == {width{1'b0}});
+            assert ((flags ^ $past(flags)) == ((flags ^ $past(flags)) & $past(sets | clears)));
+        end
+        if (pastValid && $past(!rstN || clear))
+            assert (flags == {width{1'b0}});
+    end
+`endif
+
 endmodule

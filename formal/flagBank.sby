@@ -1,0 +1,19 @@
+[tasks]
+bmc
+prove
+
+[options]
+bmc: mode bmc
+bmc: depth 12
+prove: mode prove
+prove: depth 2
+
+[engines]
+smtbmc yices
+
+[script]
+read -formal flagBank.v
+prep -top flagBank
+
+[files]
+../src/flagBank.v
