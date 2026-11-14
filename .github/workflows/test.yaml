@@ -32,6 +32,12 @@ jobs:
           make TOPLEVEL=coreHarness COCOTB_TEST_MODULES=testCoreLockstep
           ! grep failure results.xml
 
+      - name: Run 2-core lockstep tests
+        run: |
+          cd test
+          make TOPLEVEL=multiCoreHarness COCOTB_TEST_MODULES=testMultiCoreLockstep
+          ! grep failure results.xml
+
       - name: Run tests
         run: |
           cd test

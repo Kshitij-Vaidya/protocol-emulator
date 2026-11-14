@@ -40,11 +40,17 @@ def _jmp(rng: random.Random) -> int:
     return (condition << isa.fieldShift) | offset
 
 
-def _wait(rng: random.Random) -> int:
+@dataclass(frozen=True)
+class InstructionMix:
+    weights: dict[isa.Opcode, int]
+    flagIndexes: int = isa.flagCount
+
+
+def _wait(rng: random.Random, mix: InstructionMix) -> int:
     polarity = rng.randrange(2)
     source = rng.randrange(3)
     isTimeoutEn = int(rng.random() < 0.8)
-    index = rng.randrange(isa.flagCount if source == isa.WaitSource.flag else isa.pinCount)
+    index = rng.randrange(mix.flagIndexes if source == isa.WaitSource.flag else isa.pinCount)
     return (polarity << 8) | (source << isa.fieldShift) | (isTimeoutEn << 5) | index
 
 
@@ -80,19 +86,19 @@ def _set(rng: random.Random) -> int:
     return (destination << isa.fieldShift) | data
 
 
-def _flag(rng: random.Random) -> int:
+def _flag(rng: random.Random, mix: InstructionMix) -> int:
     operation = rng.choices(range(3), [4, 4, 1])[0]
-    return (operation << 7) | rng.randrange(isa.flagCount)
+    return (operation << 7) | rng.randrange(mix.flagIndexes)
 
 
-operandMakers: dict[isa.Opcode, Callable[[random.Random], int]] = {
-    isa.Opcode.jmp: _jmp,
+operandMakers: dict[isa.Opcode, Callable[[random.Random, InstructionMix], int]] = {
+    isa.Opcode.jmp: lambda rng, mix: _jmp(rng),
     isa.Opcode.wait: _wait,
-    isa.Opcode.shiftIn: _shiftIn,
-    isa.Opcode.shiftOut: _shiftOut,
-    isa.Opcode.pushPull: _pushPull,
-    isa.Opcode.mov: _mov,
-    isa.Opcode.set: _set,
+    isa.Opcode.shiftIn: lambda rng, mix: _shiftIn(rng),
+    isa.Opcode.shiftOut: lambda rng, mix: _shiftOut(rng),
+    isa.Opcode.pushPull: lambda rng, mix: _pushPull(rng),
+    isa.Opcode.mov: lambda rng, mix: _mov(rng),
+    isa.Opcode.set: lambda rng, mix: _set(rng),
     isa.Opcode.flag: _flag,
 }
 opcodeWeights = {
@@ -107,10 +113,16 @@ opcodeWeights = {
 }
 
 
-def randomInstruction(rng: random.Random, timingMax: int = isa.timingMask) -> int:
-    opcode = rng.choices(list(opcodeWeights), list(opcodeWeights.values()))[0]
-    timing = 0 if rng.random() < 0.6 else rng.randint(0, timingMax)
-    return isa.encode(opcode, timing, operandMakers[opcode](rng))
+defaultMix = InstructionMix(opcodeWeights)
+flagHeavyMix = InstructionMix(
+    {**opcodeWeights, isa.Opcode.wait: 15, isa.Opcode.flag: 20}, flagIndexes=2
+)
+
+
+def randomInstruction(rng: random.Random, mix: InstructionMix = defaultMix) -> int:
+    opcode = rng.choices(list(mix.weights), list(mix.weights.values()))[0]
+    timing = 0 if rng.random() < 0.6 else rng.randint(0, isa.timingMask)
+    return isa.encode(opcode, timing, operandMakers[opcode](rng, mix))
 
 
 def randomSideSet(rng: random.Random) -> isa.SideSetConfig:
@@ -138,8 +150,8 @@ def randomConfig(rng: random.Random) -> CoreConfig:
     )
 
 
-def randomProgram(rng: random.Random) -> Program:
-    words = tuple(randomInstruction(rng) for _ in range(isa.programWords))
+def randomProgram(rng: random.Random, mix: InstructionMix) -> Program:
+    words = tuple(randomInstruction(rng, mix) for _ in range(isa.programWords))
     wrapTop = rng.choice([isa.programWords - 1, rng.randrange(4, 48)])
     wrapBottom = rng.randint(0, wrapTop)
     return Program(words, {}, randomSideSet(rng), wrapBottom, wrapTop)
@@ -154,9 +166,9 @@ def randomHostWord(rng: random.Random) -> int:
     return rng.randrange(dataMask + 1)
 
 
-def randomScenario(seed: int) -> RandomScenario:
+def randomScenario(seed: int, mix: InstructionMix = defaultMix) -> RandomScenario:
     rng = random.Random(seed)
-    program = randomProgram(rng)
+    program = randomProgram(rng, mix)
     config = randomConfig(rng)
     hostWords = tuple(randomHostWord(rng) for _ in range(rng.randint(0, 12)))
     syncBypass = rng.randrange(1 << isa.pinCount) & inputMask if rng.random() < 0.3 else 0

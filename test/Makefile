@@ -13,6 +13,7 @@ ifneq ($(GATES),yes)
 SIM_BUILD				= sim_build/rtl-$(TOPLEVEL)
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
 VERILOG_SOURCES += $(PWD)/coreHarness.v
+VERILOG_SOURCES += $(PWD)/multiCoreHarness.v
 
 else
 

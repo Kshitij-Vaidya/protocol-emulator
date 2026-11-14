@@ -38,8 +38,8 @@ class Machine:
     def outputs(self) -> int:
         levels = 0
         for core in self.cores:
-            levels |= core.pinOut & ((core.pinDir & bidirectionalMask) | outputOnlyMask)
-        return levels
+            levels |= core.pinOut
+        return levels & self.outputEnables
 
     def step(self, inputs: int) -> None:
         inputs &= inputMask
