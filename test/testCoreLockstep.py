@@ -12,7 +12,18 @@ from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, RisingEdge
 from asm.assembler import Program, assemble
 from iss.core import CoreConfig, IssError
 from iss.machine import Machine, bidirectionalMask, outputOnlyMask
-from iss.models import I2cTarget, SpiTarget, UartFrame, UartSource, i2cRead, i2cResult, i2cWrite
+from iss.models import (
+    I2cTarget,
+    Ps2Device,
+    SpiTarget,
+    UartFrame,
+    UartSource,
+    i2cRead,
+    i2cResult,
+    i2cWrite,
+    ps2HostWord,
+    ps2Result,
+)
 from functionalCoverage import ExecuteSample, FunctionalCoverage, StateSample
 from programGenerator import randomEnvironment, randomHostReads, randomScenario
 
@@ -353,6 +364,50 @@ async def testI2cLockstep(dut: Any) -> None:
         (0xA1, False),
     ]
     assert (target.starts, target.stops) == (2, 1)
+
+
+@cocotb.test()
+async def testPs2Lockstep(dut: Any) -> None:
+    startClock(dut)
+    dataPin, clkPin = 2, 3
+    device = Ps2Device(
+        halfPeriod=30, outgoing=[0x5A], replies={0xF4: [0xFA]}, requestCycles=200
+    )
+
+    def environmentFactory(machine: Machine) -> Environment:
+        def busLevels() -> tuple[int, int]:
+            enables = machine.outputEnables
+            clk = int(not ((enables >> clkPin) & 1 or device.clkDrive))
+            data = int(not ((enables >> dataPin) & 1 or device.dataDrive))
+            return clk, data
+
+        def environment(cycle: int, outputs: int) -> int:
+            device.update(*busLevels())
+            clk, data = busLevels()
+            return (clk << clkPin) | (data << dataPin)
+
+        return environment
+
+    config = CoreConfig(
+        clkDiv=2,
+        outBase=dataPin,
+        outCount=1,
+        setBase=dataPin,
+        setCount=2,
+        inBase=dataPin,
+        jmpPin=clkPin,
+    )
+    scenario = Scenario(
+        loadExample("ps2Host"),
+        config,
+        3000,
+        environmentFactory=environmentFactory,
+        hostWords=[ps2HostWord(0xF4)],
+        idleInputs=(1 << dataPin) | (1 << clkPin),
+    )
+    await runLockstep(dut, scenario)
+    assert device.received == [0xF4]
+    assert sorted(ps2Result(word) for word in scenario.received) == [(0x5A, True), (0xFA, True)]
 
 
 directedPrograms = {

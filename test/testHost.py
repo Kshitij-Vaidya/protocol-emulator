@@ -3,7 +3,7 @@ from pathlib import Path
 
 import cocotb
 from cocotb.handle import LogicObject
-from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
 from cocotbext.i2c import I2cMemory
 from cocotbext.spi import SpiBus, SpiConfig
 from cocotbext.spi.devices.generic import SpiSlaveLoopback
@@ -25,7 +25,7 @@ from hostInterface import (
     writeRegister,
 )
 from iss.core import CoreConfig
-from iss.models import i2cRead, i2cResult, i2cWrite
+from iss.models import Ps2Device, i2cRead, i2cResult, i2cWrite, ps2HostWord, ps2Result
 
 examplesDir = Path(__file__).resolve().parent.parent / "sw" / "asm" / "examples"
 programWords = 256
@@ -392,3 +392,51 @@ async def testRestartClearsSharedFlags(dut: Dut) -> None:
     await selectCore(dut, 0)
     await writeRegister(dut, Register.ctrl, [0b10])
     assert await readOne(dut, Register.status) >> flagShift == 0
+
+
+ps2DataPin = 2
+ps2ClkPin = 3
+ps2Divider = 4
+
+
+async def drivePs2Device(dut: Dut, device: Ps2Device) -> None:
+    while True:
+        await FallingEdge(dut.clk)
+        bus = int(dut.uio_in.value)
+        device.update((bus >> ps2ClkPin) & 1, (bus >> ps2DataPin) & 1)
+        released = 0xFF
+        if device.clkDrive:
+            released &= ~(1 << ps2ClkPin)
+        if device.dataDrive:
+            released &= ~(1 << ps2DataPin)
+        dut.uioExternal.value = released
+
+
+@cocotb.test()
+async def testPs2FirmwareTalksToDevice(dut: Dut) -> None:
+    await resetDut(dut)
+    device = Ps2Device(halfPeriod=80, outgoing=[0xAA], replies={0xF4: [0xFA]}, requestCycles=400)
+    config = CoreConfig(
+        clkDiv=ps2Divider,
+        outBase=ps2DataPin,
+        outCount=1,
+        setBase=ps2DataPin,
+        setCount=2,
+        inBase=ps2DataPin,
+        jmpPin=ps2ClkPin,
+    )
+    await startProgram(dut, loadExample("ps2Host"), config)
+    cocotb.start_soon(drivePs2Device(dut, device))
+    for _ in range(100):
+        if await rxLevel(dut) == 1:
+            break
+        await ClockCycles(dut.clk, 200)
+    assert ps2Result(await readOne(dut, Register.rxFifo)) == (0xAA, True)
+    await writeRegister(dut, Register.txFifo, [ps2HostWord(0xF4)])
+    for _ in range(100):
+        if await rxLevel(dut) == 1:
+            break
+        await ClockCycles(dut.clk, 200)
+    assert ps2Result(await readOne(dut, Register.rxFifo)) == (0xFA, True)
+    assert device.received == [0xF4]
+    assert device.receiveErrors == 0

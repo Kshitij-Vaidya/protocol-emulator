@@ -10,6 +10,7 @@ from iss.core import Core, CoreConfig
 from iss.machine import Machine
 from iss.models import (
     I2cTarget,
+    Ps2Device,
     PinRecorder,
     SpiTarget,
     UartFrame,
@@ -18,6 +19,8 @@ from iss.models import (
     i2cRead,
     i2cResult,
     i2cWrite,
+    ps2HostWord,
+    ps2Result,
 )
 
 examplesDir = Path(__file__).resolve().parents[2] / "asm" / "examples"
@@ -35,6 +38,10 @@ i2cAddress = 0x42
 i2cBusIdle = (1 << sdaPin) | (1 << sclPin)
 i2cBusErrorFlag = 1
 fastModeDivider = 9
+ps2DataPin = 2
+ps2ClkPin = 3
+ps2BusIdle = (1 << ps2DataPin) | (1 << ps2ClkPin)
+ps2NackFlag = 2
 byteShift = 8
 byteBits = 8
 uartTxTicksPerBit = 4
@@ -446,3 +453,82 @@ def testI2cFastModeStartAndStopTimesAt48Mhz() -> None:
     assert len(times["startSetup"]) == 2
     assert len(times["stopSetup"]) == 1
     assert min(times["startSetup"][1:] + times["startHold"] + times["stopSetup"]) / clockHz >= 0.6e-6
+
+
+@dataclass
+class Ps2Run:
+    results: list[tuple[int, bool]]
+    machine: Machine
+    trace: list[tuple[int, int]]
+
+
+def runPs2(words: Sequence[int], device: Ps2Device, clkDiv: int, cycles: int) -> Ps2Run:
+    config = CoreConfig(
+        clkDiv=clkDiv,
+        outBase=ps2DataPin,
+        outCount=1,
+        setBase=ps2DataPin,
+        setCount=2,
+        inBase=ps2DataPin,
+        jmpPin=ps2ClkPin,
+    )
+    machine = Machine([(loadExample("ps2Host"), config)], idleInputs=ps2BusIdle)
+    core = machine.cores[0]
+    pending = deque(words)
+    run = Ps2Run([], machine, [])
+
+    def busLevels() -> tuple[int, int]:
+        enables = machine.outputEnables
+        clk = int(not ((enables >> ps2ClkPin) & 1 or device.clkDrive))
+        data = int(not ((enables >> ps2DataPin) & 1 or device.dataDrive))
+        return clk, data
+
+    def environment(cycle: int, outputs: int) -> int:
+        device.update(*busLevels())
+        clk, data = busLevels()
+        run.trace.append((clk, data))
+        feedHost(core, pending)
+        word = core.hostRead()
+        if word is not None:
+            run.results.append(ps2Result(word))
+        return (clk << ps2ClkPin) | (data << ps2DataPin)
+
+    machine.run(cycles, environment)
+    return run
+
+
+def testPs2HostReceivesDeviceBytes() -> None:
+    data = [0xAA, 0x00, 0xFF, 0x5A]
+    device = Ps2Device(halfPeriod=60, outgoing=data)
+    run = runPs2([], device, clkDiv=4, cycles=8000)
+    assert run.results == [(value, True) for value in data]
+
+
+def testPs2HostReportsParityError() -> None:
+    device = Ps2Device(halfPeriod=60, outgoing=[0x12, 0x34, 0x56], badParity=[1])
+    run = runPs2([], device, clkDiv=4, cycles=6000)
+    assert run.results == [(0x12, True), (0x34, False), (0x56, True)]
+
+
+def testPs2HostSendsCommandAndReceivesReply() -> None:
+    device = Ps2Device(halfPeriod=60, replies={0xF4: [0xFA]}, requestCycles=400)
+    run = runPs2([ps2HostWord(0xF4)], device, clkDiv=4, cycles=6000)
+    assert device.received == [0xF4]
+    assert device.receiveErrors == 0
+    assert run.results == [(0xFA, True)]
+    assert not run.machine.flags.isSet(ps2NackFlag)
+    assert run.trace[-1] == (1, 1)
+
+
+def testPs2ResetCommandAtRealTimingAt48Mhz() -> None:
+    clkDiv = clockHz // 1_000_000
+    device = Ps2Device(
+        halfPeriod=40 * clkDiv,
+        replies={0xFF: [0xFA, 0xAA]},
+        requestCycles=100 * clkDiv,
+    )
+    run = runPs2([ps2HostWord(0xFF)], device, clkDiv=clkDiv, cycles=200_000)
+    assert device.received == [0xFF]
+    assert run.results == [(0xFA, True), (0xAA, True)]
+    firstLow = next(count for level, count in levelRuns(run.trace, 0) if level == 0)
+    assert firstLow / clockHz >= 100e-6

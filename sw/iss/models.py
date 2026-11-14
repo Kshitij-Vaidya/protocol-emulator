@@ -223,3 +223,117 @@ class I2cTarget:
         if self.stretchCycles:
             self.sclDrive = True
             self._stretchLeft = self.stretchCycles
+
+
+ps2FrameBits = 11
+ps2HostBits = 10
+ps2ResultShift = 6
+ps2StopBit = 9
+
+
+def ps2Parity(data: int) -> int:
+    return 1 - bin(data & 0xFF).count("1") % 2
+
+
+def ps2HostWord(data: int) -> int:
+    return (data & 0xFF) | (ps2Parity(data) << byteBits) | (1 << ps2StopBit)
+
+
+def ps2Result(word: int) -> tuple[int, bool]:
+    frame = word >> ps2ResultShift
+    data = frame & 0xFF
+    isValid = (frame >> byteBits) & 1 == ps2Parity(data) and bool((frame >> ps2StopBit) & 1)
+    return data, isValid
+
+
+class Ps2Device:
+    def __init__(
+        self,
+        halfPeriod: int,
+        outgoing: Iterable[int] = (),
+        replies: dict[int, Sequence[int]] | None = None,
+        requestCycles: int = 0,
+        gapCycles: int = 0,
+        badParity: Iterable[int] = (),
+    ) -> None:
+        self.halfPeriod = halfPeriod
+        self.requestCycles = requestCycles or 2 * halfPeriod
+        self.gapCycles = gapCycles or 2 * halfPeriod
+        self.replies = replies or {}
+        self.received: list[int] = []
+        self.receiveErrors = 0
+        self.clkDrive = False
+        self.dataDrive = False
+        self._outgoing = deque(outgoing)
+        self._badParity = set(badParity)
+        self._state = "idle"
+        self._bits: list[int] = []
+        self._time = 0
+        self._lowCycles = 0
+        self._idleCycles = 0
+        self._sentCount = 0
+
+    def update(self, clk: int, data: int) -> None:
+        handlers = {
+            "idle": self._idle,
+            "request": self._request,
+            "sending": self._sending,
+            "receiving": self._receiving,
+        }
+        handlers[self._state](clk, data)
+
+    def _idle(self, clk: int, data: int) -> None:
+        self._lowCycles = self._lowCycles + 1 if not clk else 0
+        if self._lowCycles >= self.requestCycles and not data:
+            self._state = "request"
+            return
+        self._idleCycles = self._idleCycles + 1 if clk and data else 0
+        if self._outgoing and self._idleCycles >= self.gapCycles:
+            value = self._outgoing.popleft()
+            parity = ps2Parity(value) ^ int(self._sentCount in self._badParity)
+            self._sentCount += 1
+            self._bits = [0, *[(value >> bit) & 1 for bit in range(byteBits)], parity, 1]
+            self._time = 0
+            self._state = "sending"
+
+    def _sending(self, clk: int, data: int) -> None:
+        bitIndex, phase = divmod(self._time, 2 * self.halfPeriod)
+        if bitIndex >= ps2FrameBits:
+            self.clkDrive = False
+            self.dataDrive = False
+            self._idleCycles = 0
+            self._state = "idle"
+            return
+        self.dataDrive = not self._bits[bitIndex]
+        self.clkDrive = phase >= self.halfPeriod
+        self._time += 1
+
+    def _request(self, clk: int, data: int) -> None:
+        if clk:
+            self._bits = []
+            self._time = 0
+            self._state = "receiving"
+
+    def _receiving(self, clk: int, data: int) -> None:
+        bitIndex, phase = divmod(self._time, 2 * self.halfPeriod)
+        self._time += 1
+        if bitIndex > ps2HostBits:
+            self.clkDrive = False
+            self.dataDrive = False
+            self._finishReceive()
+            return
+        self.clkDrive = phase < self.halfPeriod
+        if bitIndex < ps2HostBits and phase == self.halfPeriod:
+            self._bits.append(data)
+        self.dataDrive = bitIndex == ps2HostBits
+
+    def _finishReceive(self) -> None:
+        value = sum(bit << index for index, bit in enumerate(self._bits[:byteBits]))
+        isValid = self._bits[byteBits] == ps2Parity(value) and self._bits[ps2StopBit] == 1
+        if isValid:
+            self.received.append(value)
+            self._outgoing.extend(self.replies.get(value, ()))
+        else:
+            self.receiveErrors += 1
+        self._idleCycles = 0
+        self._state = "idle"
