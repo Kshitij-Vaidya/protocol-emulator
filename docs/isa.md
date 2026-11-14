@@ -378,6 +378,68 @@ errorLoop:
     jmp errorLoop
 ```
 
+### PS/2 host, 34 instructions
+
+Configuration: DATA is pin 2 and CLK is pin 3, each with an external pull-up. `setBase` = DATA
+and `setCount` = 2 (bit 0 is DATA, bit 1 is CLK). `outBase` = DATA, `outCount` = 1, `inBase` =
+DATA, and `jmpPin` = CLK. OUT and IN shift right (LSB first). The program drives a pin low with
+a pin direction of 1.
+
+- Receive: the program waits in `idle`. When the device pulls CLK low, the program samples DATA
+  on the next 10 falling edges of CLK (8 data bits, parity, stop). The RX FIFO gets the 10 bits
+  in bits 15:6. The host checks the odd parity and the stop bit.
+- Send: a TX FIFO word holds the data in bits 7:0, the odd parity in bit 8, and 1 in bit 9 (the
+  stop bit). The program holds CLK low for 128 ticks (128 µs with a 1 µs tick), pulls DATA low,
+  and releases CLK. It then drives 1 bit on each low phase of the device clock. If the device
+  does not acknowledge, the program sets flag 2.
+
+CAUTION: The program has no timeout on CLK. If the device stops in a frame, the program stays in
+the frame until a restart.
+
+```
+idle:
+    jmp pin checkTx
+    set x, 9
+rxBit:
+    wait 1 gpio 3
+    wait 0 gpio 3
+    in pins, 1
+    jmp x-- rxBit
+    push
+    wait 1 gpio 3
+    jmp idle
+checkTx:
+    mov x, status
+    set y, 1
+    and x, y
+    jmp !x send
+    jmp idle
+send:
+    pull
+    mov osr, ~osr
+    set pindirs, 2
+    set x, 7
+holdClock:
+    jmp x-- holdClock  [15]
+    set pindirs, 3
+    set pindirs, 1
+    set x, 9
+txBit:
+    wait 0 gpio 3
+    out pindirs, 1
+    wait 1 gpio 3
+    jmp x-- txBit
+    wait 0 gpio 3
+    mov x, pins
+    set y, 1
+    and x, y
+    jmp !x acked
+    flag set 2
+acked:
+    wait 1 gpio 3
+    wait 1 gpio 2
+```
+
 ### Use of the WAIT timeout (I2C clock stretch)
 
 ```

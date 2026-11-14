@@ -57,6 +57,8 @@ pytest
 | `SpiTarget` | An SPI mode 0 target. It samples MOSI on the SCK rising edge and changes MISO on the falling edge. |
 | `I2cTarget` | An I2C target with a 7-bit address. It acknowledges its address and each written byte, sends read bytes, and can stretch SCL after each ACK. |
 | `i2cWrite`, `i2cRead`, `i2cResult` | Make the host words for `i2cController.pasm`, and decode its RX FIFO words |
+| `Ps2Device` | A PS/2 device. It sends frames, receives host commands with an ACK, and can reply to a command. It can send a frame with a bad parity. |
+| `ps2HostWord`, `ps2Result` | Make the host words for `ps2Host.pasm`, and decode and check its RX FIFO words |
 
 ## Results
 
@@ -71,3 +73,4 @@ The tests in `iss/test/testFirmware.py` show these results for the programs in
 | WS2812B | T0H, T0L, T1H, and T1L are inside the datasheet limits at 48 MHz with `clkDiv` 6 |
 | SPI mode 0 with CS | CS is low on each SCK rising edge, and high between bytes |
 | I2C controller | Write, read, a wrong address, a repeated START, and clock stretch operate. A stretch above 63 ticks sets flag 1. At 48 MHz with `clkDiv` 9, SCL is 1.5 µs low and 1.125 µs high (381 kHz). The START and STOP setup and hold times are 0.75 µs or more. |
+| PS/2 host | Receives frames and reports a parity error. Sends a command, gets the ACK, and receives the reply. At 48 MHz with `clkDiv` 48, CLK is low for 128 µs before a command. |
