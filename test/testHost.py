@@ -25,7 +25,18 @@ from hostInterface import (
     writeRegister,
 )
 from iss.core import CoreConfig
-from iss.models import Ps2Device, i2cRead, i2cResult, i2cWrite, ps2HostWord, ps2Result
+from iss.models import (
+    JtagTap,
+    Ps2Device,
+    i2cRead,
+    i2cResult,
+    i2cWrite,
+    jtagShift,
+    jtagTdoBits,
+    jtagWords,
+    ps2HostWord,
+    ps2Result,
+)
 
 examplesDir = Path(__file__).resolve().parent.parent / "sw" / "asm" / "examples"
 programWords = 256
@@ -440,3 +451,46 @@ async def testPs2FirmwareTalksToDevice(dut: Dut) -> None:
     assert ps2Result(await readOne(dut, Register.rxFifo)) == (0xFA, True)
     assert device.received == [0xF4]
     assert device.receiveErrors == 0
+
+
+jtagIdcode = 0x4BA00477
+
+
+async def driveJtagTap(dut: Dut, tap: JtagTap) -> None:
+    while True:
+        await FallingEdge(dut.clk)
+        tap.update(int(dut.pin9.value), int(dut.pin11.value), int(dut.pin10.value))
+        dut.pin16.value = tap.tdo
+
+
+@cocotb.test()
+async def testJtagFirmwareReadsIdcode(dut: Dut) -> None:
+    await resetDut(dut)
+    tap = JtagTap(jtagIdcode)
+    cocotb.start_soon(driveJtagTap(dut, tap))
+    config = CoreConfig(
+        clkDiv=2,
+        outBase=10,
+        outCount=2,
+        sideBase=9,
+        inBase=16,
+        autoPull=True,
+        pullThreshold=16,
+        autoPush=True,
+        pushThreshold=8,
+    )
+    await startProgram(dut, loadExample("jtag"), config)
+    pairs = [(1, 0)] * 5 + [(0, 0), (1, 0), (0, 0), (0, 0)] + jtagShift([0] * 32) + [(1, 0), (0, 0)]
+    words = jtagWords(pairs)
+    received: list[int] = []
+    for first in range(0, len(words), fifoDepth):
+        chunk = words[first : first + fifoDepth]
+        await writeRegister(dut, Register.txFifo, chunk)
+        for _ in range(100):
+            if await rxLevel(dut) == len(chunk):
+                break
+            await ClockCycles(dut.clk, 50)
+        received.extend(await readRegister(dut, Register.rxFifo, len(chunk)))
+    tdo = jtagTdoBits(received)
+    assert sum(bit << index for index, bit in enumerate(tdo[9:41])) == jtagIdcode
+    assert tap.state == "runTestIdle"

@@ -14,6 +14,7 @@ from iss.core import CoreConfig, IssError
 from iss.machine import Machine, bidirectionalMask, outputOnlyMask
 from iss.models import (
     I2cTarget,
+    JtagTap,
     Ps2Device,
     SpiTarget,
     UartFrame,
@@ -21,6 +22,9 @@ from iss.models import (
     i2cRead,
     i2cResult,
     i2cWrite,
+    jtagShift,
+    jtagTdoBits,
+    jtagWords,
     ps2HostWord,
     ps2Result,
 )
@@ -408,6 +412,37 @@ async def testPs2Lockstep(dut: Any) -> None:
     await runLockstep(dut, scenario)
     assert device.received == [0xF4]
     assert sorted(ps2Result(word) for word in scenario.received) == [(0x5A, True), (0xFA, True)]
+
+
+@cocotb.test()
+async def testJtagLockstep(dut: Any) -> None:
+    startClock(dut)
+    tckPin, tdiPin, tmsPin, tdoPin = 9, 10, 11, 16
+    idcode = 0x4BA00477
+    tap = JtagTap(idcode)
+
+    def environment(cycle: int, outputs: int) -> int:
+        tap.update((outputs >> tckPin) & 1, (outputs >> tmsPin) & 1, (outputs >> tdiPin) & 1)
+        return tap.tdo << tdoPin
+
+    config = CoreConfig(
+        clkDiv=2,
+        outBase=tdiPin,
+        outCount=2,
+        sideBase=tckPin,
+        inBase=tdoPin,
+        autoPull=True,
+        pullThreshold=16,
+        autoPush=True,
+        pushThreshold=8,
+    )
+    pairs = [(1, 0)] * 5 + [(0, 0), (1, 0), (0, 0), (0, 0)] + jtagShift([0] * 32) + [(1, 0), (0, 0)]
+    scenario = Scenario(
+        loadExample("jtag"), config, 1200, environment=environment, hostWords=jtagWords(pairs)
+    )
+    await runLockstep(dut, scenario)
+    tdo = jtagTdoBits(scenario.received)
+    assert sum(bit << index for index, bit in enumerate(tdo[9:41])) == idcode
 
 
 directedPrograms = {

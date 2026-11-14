@@ -10,6 +10,7 @@ from iss.core import Core, CoreConfig
 from iss.machine import Machine
 from iss.models import (
     I2cTarget,
+    JtagTap,
     Ps2Device,
     PinRecorder,
     SpiTarget,
@@ -19,6 +20,9 @@ from iss.models import (
     i2cRead,
     i2cResult,
     i2cWrite,
+    jtagShift,
+    jtagTdoBits,
+    jtagWords,
     ps2HostWord,
     ps2Result,
 )
@@ -42,6 +46,11 @@ ps2DataPin = 2
 ps2ClkPin = 3
 ps2BusIdle = (1 << ps2DataPin) | (1 << ps2ClkPin)
 ps2NackFlag = 2
+tckPin = 9
+tdiPin = 10
+tmsPin = 11
+tdoPin = 16
+jtagIdcode = 0x4BA00477
 byteShift = 8
 byteBits = 8
 uartTxTicksPerBit = 4
@@ -532,3 +541,84 @@ def testPs2ResetCommandAtRealTimingAt48Mhz() -> None:
     assert run.results == [(0xFA, True), (0xAA, True)]
     firstLow = next(count for level, count in levelRuns(run.trace, 0) if level == 0)
     assert firstLow / clockHz >= 100e-6
+
+
+def runJtag(
+    pairs: Sequence[tuple[int, int]], tap: JtagTap, clkDiv: int, syncBypass: int = 0
+) -> list[int]:
+    config = CoreConfig(
+        clkDiv=clkDiv,
+        outBase=tdiPin,
+        outCount=2,
+        sideBase=tckPin,
+        inBase=tdoPin,
+        autoPull=True,
+        pullThreshold=16,
+        autoPush=True,
+        pushThreshold=8,
+    )
+    machine = Machine([(loadExample("jtag"), config)], syncBypass)
+    core = machine.cores[0]
+    pending = deque(jtagWords(pairs))
+    results: list[int] = []
+
+    def environment(cycle: int, outputs: int) -> int:
+        tap.update((outputs >> tckPin) & 1, (outputs >> tmsPin) & 1, (outputs >> tdiPin) & 1)
+        feedHost(core, pending)
+        word = core.hostRead()
+        if word is not None:
+            results.append(word)
+        return tap.tdo << tdoPin
+
+    machine.run((len(pairs) + 16) * 4 * clkDiv + 100, environment)
+    return jtagTdoBits(results)
+
+
+tapReset = [(1, 0)] * 5
+resetToShiftDr = [(0, 0), (1, 0), (0, 0), (0, 0)]
+idleToShiftIr = [(1, 0), (1, 0), (0, 0), (0, 0)]
+exitToIdle = [(1, 0), (0, 0)]
+
+
+def bitsOf(value: int, count: int) -> list[int]:
+    return [(value >> bit) & 1 for bit in range(count)]
+
+
+def valueOf(bits: Sequence[int]) -> int:
+    return sum(bit << index for index, bit in enumerate(bits))
+
+
+@pytest.mark.parametrize(("clkDiv", "syncBypass"), [(2, 0), (5, 0), (1, 1 << tdoPin)])
+def testJtagReadsIdcodeAfterReset(clkDiv: int, syncBypass: int) -> None:
+    tap = JtagTap(jtagIdcode)
+    shiftStart = len(tapReset) + len(resetToShiftDr)
+    pairs = tapReset + resetToShiftDr + jtagShift([0] * 32) + exitToIdle
+    tdo = runJtag(pairs, tap, clkDiv, syncBypass)
+    assert valueOf(tdo[shiftStart : shiftStart + 32]) == jtagIdcode
+    assert tap.state == "runTestIdle"
+
+
+def testJtagBypassDelaysDataByOneBit() -> None:
+    tap = JtagTap(jtagIdcode)
+    pattern = [1, 0, 1, 1, 0, 0, 1, 0, 1, 1]
+    pairs = (
+        tapReset
+        + [(0, 0)]
+        + idleToShiftIr
+        + jtagShift(bitsOf(0b1111, 4))
+        + exitToIdle
+        + resetToShiftDr[1:]
+        + jtagShift(pattern)
+        + exitToIdle
+    )
+    tdo = runJtag(pairs, tap, clkDiv=2)
+    shiftStart = len(tapReset) + 1 + len(idleToShiftIr) + 4 + len(exitToIdle) + 3
+    assert tap.instruction == 0b1111
+    assert tdo[shiftStart + 1 : shiftStart + len(pattern)] == pattern[:-1]
+
+
+def testJtagTapVisitsExpectedStates() -> None:
+    tap = JtagTap(jtagIdcode)
+    runJtag(tapReset + resetToShiftDr + jtagShift([0] * 4) + exitToIdle, tap, clkDiv=2)
+    assert tap.states[5:9] == ["runTestIdle", "selectDr", "captureDr", "shiftDr"]
+    assert tap.states[12:15] == ["exit1Dr", "updateDr", "runTestIdle"]

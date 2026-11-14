@@ -337,3 +337,85 @@ class Ps2Device:
             self.receiveErrors += 1
         self._idleCycles = 0
         self._state = "idle"
+
+
+jtagPairsPerWord = 8
+jtagTdoShift = 8
+jtagIrLength = 4
+jtagIdcodeInstruction = 0b0001
+jtagBypassInstruction = 0b1111
+jtagIdcodeLength = 32
+
+tapNext: dict[str, tuple[str, str]] = {
+    "testLogicReset": ("runTestIdle", "testLogicReset"),
+    "runTestIdle": ("runTestIdle", "selectDr"),
+    "selectDr": ("captureDr", "selectIr"),
+    "captureDr": ("shiftDr", "exit1Dr"),
+    "shiftDr": ("shiftDr", "exit1Dr"),
+    "exit1Dr": ("pauseDr", "updateDr"),
+    "pauseDr": ("pauseDr", "exit2Dr"),
+    "exit2Dr": ("shiftDr", "updateDr"),
+    "updateDr": ("runTestIdle", "selectDr"),
+    "selectIr": ("captureIr", "testLogicReset"),
+    "captureIr": ("shiftIr", "exit1Ir"),
+    "shiftIr": ("shiftIr", "exit1Ir"),
+    "exit1Ir": ("pauseIr", "updateIr"),
+    "pauseIr": ("pauseIr", "exit2Ir"),
+    "exit2Ir": ("shiftIr", "updateIr"),
+    "updateIr": ("runTestIdle", "selectDr"),
+}
+
+
+def jtagWords(pairs: Sequence[tuple[int, int]]) -> list[int]:
+    words = []
+    for first in range(0, len(pairs), jtagPairsPerWord):
+        word = 0
+        for index, (tms, tdi) in enumerate(pairs[first : first + jtagPairsPerWord]):
+            word |= ((tms << 1) | tdi) << (2 * index)
+        words.append(word)
+    return words
+
+
+def jtagTdoBits(words: Sequence[int]) -> list[int]:
+    return [(word >> (jtagTdoShift + bit)) & 1 for word in words for bit in range(byteBits)]
+
+
+def jtagShift(tdiBits: Sequence[int], exitAfter: bool = True) -> list[tuple[int, int]]:
+    last = len(tdiBits) - 1
+    return [(int(exitAfter and index == last), bit) for index, bit in enumerate(tdiBits)]
+
+
+class JtagTap:
+    def __init__(self, idcode: int) -> None:
+        self.idcode = idcode
+        self.state = "testLogicReset"
+        self.instruction = jtagIdcodeInstruction
+        self.tdo = 0
+        self._shift = 0
+        self._length = 0
+        self._previousTck = 0
+        self.states: list[str] = []
+
+    def update(self, tck: int, tms: int, tdi: int) -> None:
+        if tck and not self._previousTck:
+            self._rising(tms, tdi)
+        elif self._previousTck and not tck and self.state in ("shiftDr", "shiftIr"):
+            self.tdo = self._shift & 1
+        self._previousTck = tck
+
+    def _rising(self, tms: int, tdi: int) -> None:
+        if self.state in ("shiftDr", "shiftIr"):
+            self._shift = (self._shift >> 1) | (tdi << (self._length - 1))
+        self.state = tapNext[self.state][tms]
+        self.states.append(self.state)
+        if self.state == "testLogicReset":
+            self.instruction = jtagIdcodeInstruction
+        elif self.state == "captureDr":
+            isIdcode = self.instruction == jtagIdcodeInstruction
+            self._shift = self.idcode if isIdcode else 0
+            self._length = jtagIdcodeLength if isIdcode else 1
+        elif self.state == "captureIr":
+            self._shift = 0b0001
+            self._length = jtagIrLength
+        elif self.state == "updateIr":
+            self.instruction = self._shift & ((1 << jtagIrLength) - 1)
