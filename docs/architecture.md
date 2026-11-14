@@ -1,6 +1,7 @@
 # Architecture
 
-Status: v0.1 (2026-11-08). The design has 1 core (ADR-0003). The ISA is in `docs/isa.md`.
+Status: v0.2 (2026-11-14). The design has 2 cores (ADR-0009, ADR-0010). The ISA is in
+`docs/isa.md`.
 
 ## Requirements summary
 The source is `docs/notes/protocols.md`.
@@ -43,16 +44,18 @@ The source is `docs/notes/protocols.md`.
 
 | Block | File | Function |
 |---|---|---|
-| Top level | `src/tt_um_protocolEmulator.v` | Connects the blocks and maps the pins |
-| Host interface | `src/hostSpi.v` | SPI target, mode 0, and the register map |
+| Top level | `src/tt_um_protocolEmulator.v` | Connects the blocks, ORs the pin outputs of the cores, and maps the pins |
+| Host interface | `src/hostSpi.v` | SPI target, mode 0, and the register map, with 1 register set for each core |
+| Core slice | `src/coreSlice.v` | 1 core and its program memory |
+| Flag bank | `src/flagBank.v` | The 8 flags that all cores share |
 | Program memory | `src/progMem.v` | The SRAM macro `RM_IHPSG13_1P_256x16_c2_bm_bist`, with a 1-cycle read latency |
 | Input synchronizer | `src/pinSync.v` | 2 flip-flops on each input, and the `syncBypass` mask |
 | Core | `src/core.v` | Fetch, decode, execute, side-set, delay, clock divider, and the TX and RX FIFOs |
 | FIFO | `src/fifo.v` | 4 words of 16 bits |
 
 ### Program memory owner
-The core owns the program memory while `CTRL.run` is 1 or the core is active. Otherwise the host
-owns it. The host interface rejects a `MEM_DATA` write or an `EXEC` write while the core owns
+Each core has its own program memory. A core owns its program memory while its `CTRL.run` is 1
+or the core is active. Otherwise the host owns it. The host interface rejects a `MEM_DATA` write or an `EXEC` write while the core owns
 the memory (ADR-0006).
 
 ### Fetch
@@ -71,8 +74,18 @@ The "Timing budget" section has the slack of each register group.
 3. On the cycle after that, the core is active, and it executes the first instruction. This is
    cycle 0 of the ISS (`sw/iss/README.md`).
 
-A write of 1 to `CTRL.restart` resets the core state. The PC gets `START_PC`. The FIFOs, the
-flags, and the pin registers get 0.
+A write of 1 to `CTRL.restart` resets the state of the selected core. The PC gets `START_PC`. The
+FIFOs and the pin registers get 0. A restart of any core also sets the shared flags to 0.
+
+### Cores
+- `CORE_SEL` selects the core for the per-core registers (ADR-0010). Its reset value is 0, so
+  single-core host software operates core 0 without a change.
+- `RUN_ALL` sets `run` and requests `restart` for all cores in 1 write. The cores then start on
+  the same cycle.
+- The output levels and the output enables of the cores are ORed. All cores read the same
+  synchronized inputs.
+- A flag change by any core is visible to all cores on the next cycle. If 1 core sets a flag
+  and another core clears it on the same cycle, the set wins.
 
 ### Halt
 1. The host writes `CTRL` with `run` set to 0.
@@ -135,8 +148,14 @@ through 2-flop synchronizers, and MISO changes up to 6 cycles after the SCK risi
 | 0x0F | `SYNC_BYPASS_LO` | R/W | `syncBypass` bits 15:0 |
 | 0x10 | `SYNC_BYPASS_HI` | R/W | `syncBypass` bits 31:16 |
 | 0x11 | `ID` | R | 0x5045 |
+| 0x12 | `CORE_SEL` | R/W | [1:0] core for the per-core registers. A value with no core makes the per-core registers read as 0 and ignore writes. |
+| 0x13 | `RUN_ALL` | R/W | [1:0] `run` of cores 0 and 1. [5:4] `restart` of cores 0 and 1 (write 1, not stored). A read gives the `run` bits. |
 
 Other addresses read as 0. A write to another address has no effect.
+
+These registers are the same for all cores: `SYNC_BYPASS_LO`, `SYNC_BYPASS_HI`, `ID`,
+`CORE_SEL`, `RUN_ALL`, and `STATUS` bits [15:8] (the flags). All other registers go to the core
+that `CORE_SEL` selects.
 
 ### Host execute
 A write to `EXEC` executes the instruction 1 time, while the core is halted.

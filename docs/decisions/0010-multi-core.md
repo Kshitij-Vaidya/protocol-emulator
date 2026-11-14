@@ -29,8 +29,8 @@ The interface between the cores and the host must be final at the feature freeze
    `PIN_SIDE`, `PIN_IN`, `SHIFT`, `WRAP`, `TX_FIFO`, and `RX_FIFO`. `SYNC_BYPASS_LO`,
    `SYNC_BYPASS_HI`, `ID`, and `STATUS` bits [15:8] (the flags) are shared.
 2. **Start of all cores on the same cycle: `RUN_ALL` (0x13).** Bits [3:0] set `run` for cores
-   0–3, and bits [7:4] request `restart` for cores 0–3. 1 write starts all cores on the same
-   cycle. A read gives the `run` bits.
+   0–3, and bits [7:4] request `restart` for cores 0–3. With 2 cores, bits [1:0] and [5:4]
+   have an effect. 1 write starts all cores on the same cycle. A read gives the `run` bits.
 3. **Pin outputs: OR.** The output levels and the output enables of the cores are ORed. All
    cores read the same synchronized inputs.
 4. **Flags: 1 shared bank** in the top level, outside the cores.
@@ -39,6 +39,8 @@ The interface between the cores and the host must be final at the feature freeze
    rule 8, because a same-tick chain from core 0 to core 1 puts 2 decode paths in series. Each
    decode path already starts at the SRAM output (ADR-0008).
 6. Data transfer between cores stays postponed (`docs/isa.md`, decision 3).
+7. A restart of any core sets the shared flags to 0. A restart of 1 core can thus release a
+   `FLAG wait` in another core.
 
 ## Consequences
 - The ISS must change rule 8 before the 2-core lockstep test: flag changes take effect after
