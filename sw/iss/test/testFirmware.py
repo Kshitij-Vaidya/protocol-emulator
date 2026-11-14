@@ -1,5 +1,6 @@
 from collections import deque
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,17 @@ import pytest
 from asm.assembler import Program, assemble
 from iss.core import Core, CoreConfig
 from iss.machine import Machine
-from iss.models import PinRecorder, SpiTarget, UartFrame, UartSource, decodeUart
+from iss.models import (
+    I2cTarget,
+    PinRecorder,
+    SpiTarget,
+    UartFrame,
+    UartSource,
+    decodeUart,
+    i2cRead,
+    i2cResult,
+    i2cWrite,
+)
 
 examplesDir = Path(__file__).resolve().parents[2] / "asm" / "examples"
 clockHz = 48_000_000
@@ -18,6 +29,12 @@ csPin = 11
 dinPin = 9
 rxPin = 15
 misoPin = 16
+sdaPin = 0
+sclPin = 1
+i2cAddress = 0x42
+i2cBusIdle = (1 << sdaPin) | (1 << sclPin)
+i2cBusErrorFlag = 1
+fastModeDivider = 9
 byteShift = 8
 byteBits = 8
 uartTxTicksPerBit = 4
@@ -262,3 +279,170 @@ def testWs2812TimingIsInsideDatasheetLimits() -> None:
     for name, cycles in measured.items():
         low, high = ws2812LimitsNs[name]
         assert low <= cycles * nsPerCycle <= high, name
+
+
+@dataclass
+class I2cRun:
+    results: list[tuple[int, bool]]
+    machine: Machine
+    trace: list[tuple[int, int]]
+
+
+def runI2c(words: Sequence[int], target: I2cTarget, clkDiv: int, cycles: int) -> I2cRun:
+    config = CoreConfig(
+        clkDiv=clkDiv,
+        outBase=sdaPin,
+        outCount=1,
+        setBase=sdaPin,
+        setCount=2,
+        sideBase=sclPin,
+        inBase=sdaPin,
+        jmpPin=sclPin,
+        outShiftRight=False,
+        inShiftRight=False,
+    )
+    machine = Machine([(loadExample("i2cController"), config)], idleInputs=i2cBusIdle)
+    core = machine.cores[0]
+    pending = deque(words)
+    run = I2cRun([], machine, [])
+
+    def busLevels() -> tuple[int, int]:
+        enables = machine.outputEnables
+        scl = int(not ((enables >> sclPin) & 1 or target.sclDrive))
+        sda = int(not ((enables >> sdaPin) & 1 or target.sdaDrive))
+        return scl, sda
+
+    def environment(cycle: int, outputs: int) -> int:
+        target.update(*busLevels())
+        scl, sda = busLevels()
+        run.trace.append((scl, sda))
+        feedHost(core, pending)
+        word = core.hostRead()
+        if word is not None:
+            run.results.append(i2cResult(word))
+        return (scl << sclPin) | (sda << sdaPin)
+
+    machine.run(cycles, environment)
+    return run
+
+
+def levelRuns(trace: Sequence[tuple[int, int]], index: int) -> list[tuple[int, int]]:
+    runs: list[tuple[int, int]] = []
+    for sample in trace:
+        level = sample[index]
+        if runs and runs[-1][0] == level:
+            runs[-1] = (level, runs[-1][1] + 1)
+        else:
+            runs.append((level, 1))
+    return runs
+
+
+def testI2cWriteIsAcknowledged() -> None:
+    target = I2cTarget(i2cAddress)
+    words = [i2cWrite(i2cAddress << 1, start=True), i2cWrite(0x12), i2cWrite(0x34, stop=True)]
+    run = runI2c(words, target, clkDiv=2, cycles=1500)
+    assert target.received == [0x12, 0x34]
+    assert run.results == [(i2cAddress << 1, True), (0x12, True), (0x34, True)]
+    assert (target.starts, target.stops) == (1, 1)
+    assert run.trace[-1] == (1, 1)
+
+
+def testI2cReadReturnsTargetBytes() -> None:
+    target = I2cTarget(i2cAddress, readData=[0xA5, 0x3C])
+    words = [
+        i2cWrite((i2cAddress << 1) | 1, start=True),
+        i2cRead(ack=True),
+        i2cRead(ack=False, stop=True),
+    ]
+    run = runI2c(words, target, clkDiv=2, cycles=1500)
+    assert run.results == [((i2cAddress << 1) | 1, True), (0xA5, True), (0x3C, False)]
+    assert target.controllerAcks == [True, False]
+    assert target.stops == 1
+
+
+def testI2cWrongAddressIsNotAcknowledged() -> None:
+    target = I2cTarget(i2cAddress)
+    run = runI2c([i2cWrite(0x10 << 1, start=True, stop=True)], target, clkDiv=2, cycles=800)
+    assert run.results == [(0x10 << 1, False)]
+    assert target.received == []
+
+
+def testI2cRepeatedStartSwitchesToRead() -> None:
+    target = I2cTarget(i2cAddress, readData=[0x5E])
+    words = [
+        i2cWrite(i2cAddress << 1, start=True),
+        i2cWrite(0x07),
+        i2cWrite((i2cAddress << 1) | 1, start=True),
+        i2cRead(ack=False, stop=True),
+    ]
+    run = runI2c(words, target, clkDiv=2, cycles=2000)
+    assert target.received == [0x07]
+    assert [data for data, _ in run.results] == [i2cAddress << 1, 0x07, (i2cAddress << 1) | 1, 0x5E]
+    assert (target.starts, target.stops) == (2, 1)
+
+
+def testI2cWaitsForClockStretch() -> None:
+    stretchCycles = 150
+    target = I2cTarget(i2cAddress, stretchCycles=stretchCycles)
+    words = [i2cWrite(i2cAddress << 1, start=True), i2cWrite(0x99, stop=True)]
+    run = runI2c(words, target, clkDiv=4, cycles=3000)
+    assert target.received == [0x99]
+    assert all(ack for _, ack in run.results)
+    assert max(count for level, count in levelRuns(run.trace, 0) if level == 0) >= stretchCycles
+    assert not run.machine.flags.isSet(i2cBusErrorFlag)
+
+
+def testI2cStretchAboveTimeoutSetsBusErrorFlag() -> None:
+    target = I2cTarget(i2cAddress, stretchCycles=1000)
+    words = [i2cWrite(i2cAddress << 1, start=True), i2cWrite(0x99, stop=True)]
+    run = runI2c(words, target, clkDiv=2, cycles=2000)
+    assert run.machine.flags.isSet(i2cBusErrorFlag)
+    assert target.received == []
+
+
+def testI2cFastModeTimingAt48Mhz() -> None:
+    target = I2cTarget(i2cAddress)
+    words = [i2cWrite(i2cAddress << 1, start=True), i2cWrite(0xC3, stop=True)]
+    run = runI2c(words, target, clkDiv=fastModeDivider, cycles=4000)
+    assert target.received == [0xC3]
+    sclRuns = levelRuns(run.trace, 0)[1:-1]
+    lowCycles = min(count for level, count in sclRuns if level == 0)
+    highCycles = min(count for level, count in sclRuns if level == 1)
+    assert lowCycles / clockHz >= 1.3e-6
+    assert highCycles / clockHz >= 0.6e-6
+    assert (lowCycles + highCycles) / clockHz >= 1 / 400e3
+
+
+def busConditionTimes(trace: Sequence[tuple[int, int]]) -> dict[str, list[int]]:
+    times: dict[str, list[int]] = {"startSetup": [], "startHold": [], "stopSetup": []}
+    sclRise = 0
+    pendingStart: int | None = None
+    for cycle in range(1, len(trace)):
+        (sclBefore, sdaBefore), (scl, sda) = trace[cycle - 1], trace[cycle]
+        if scl and not sclBefore:
+            sclRise = cycle
+        if not scl and sclBefore and pendingStart is not None:
+            times["startHold"].append(cycle - pendingStart)
+            pendingStart = None
+        if scl and sclBefore and sda != sdaBefore:
+            if sda:
+                times["stopSetup"].append(cycle - sclRise)
+            else:
+                times["startSetup"].append(cycle - sclRise)
+                pendingStart = cycle
+    return times
+
+
+def testI2cFastModeStartAndStopTimesAt48Mhz() -> None:
+    target = I2cTarget(i2cAddress, readData=[0x5E])
+    words = [
+        i2cWrite(i2cAddress << 1, start=True),
+        i2cWrite(0x07),
+        i2cWrite((i2cAddress << 1) | 1, start=True),
+        i2cRead(ack=False, stop=True),
+    ]
+    run = runI2c(words, target, clkDiv=fastModeDivider, cycles=8000)
+    times = busConditionTimes(run.trace)
+    assert len(times["startSetup"]) == 2
+    assert len(times["stopSetup"]) == 1
+    assert min(times["startSetup"][1:] + times["startHold"] + times["stopSetup"]) / clockHz >= 0.6e-6
