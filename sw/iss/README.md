@@ -54,6 +54,8 @@ pytest
 | `UartSource` | Makes a UART waveform, with a baud error and a bad stop bit if necessary |
 | `decodeUart` | Decodes a recorded UART waveform. It samples each bit at its center. |
 | `SpiTarget` | An SPI mode 0 target. It samples MOSI on the SCK rising edge and changes MISO on the falling edge. |
+| `I2cTarget` | An I2C target with a 7-bit address. It acknowledges its address and each written byte, sends read bytes, and can stretch SCL after each ACK. |
+| `i2cWrite`, `i2cRead`, `i2cResult` | Make the host words for `i2cController.pasm`, and decode its RX FIFO words |
 
 ## Results
 
@@ -66,3 +68,5 @@ The tests in `iss/test/testFirmware.py` show these results for the programs in
 | UART RX | Back-to-back frames are received with a baud error of ±2%. At −3%, the receiver loses the frame alignment after 4 frames. |
 | SPI mode 0 | Without the bypass, `clkDiv` must be 2 or more (SCK 6 MHz at 48 MHz). With the `syncBypass` bit set for MISO, `clkDiv` 1 (SCK 12 MHz) operates. |
 | WS2812B | T0H, T0L, T1H, and T1L are inside the datasheet limits at 48 MHz with `clkDiv` 6 |
+| SPI mode 0 with CS | CS is low on each SCK rising edge, and high between bytes |
+| I2C controller | Write, read, a wrong address, a repeated START, and clock stretch operate. A stretch above 63 ticks sets flag 1. At 48 MHz with `clkDiv` 9, SCL is 1.5 µs low and 1.125 µs high (381 kHz). The START and STOP setup and hold times are 0.75 µs or more. |

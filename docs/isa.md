@@ -277,6 +277,101 @@ doZero:
 | T1L | 3 | 375 ns | 300–600 ns |
 | Bit | 10 | 1.25 µs | 0.65–1.85 µs |
 
+### SPI controller with chip select, mode 0, 9 instructions
+
+Configuration: `sideCount` 1, side-set pin = SCK, OUT pin = MOSI, `SET` pin = CS, IN pin =
+MISO. OUT and IN shift left. Autopull and autopush are off. Each FIFO word holds 1 byte in bits
+15:8. CS is low for each byte. The RX FIFO gets the received byte in bits 7:0.
+
+```
+.side_set 1
+    set pins, 1        side 0
+.wrap_target
+    pull               side 0
+    set pins, 0        side 0
+    set x, 7           side 0
+bitLoop:
+    out pins, 1        side 0 [1]
+    in pins, 1         side 1
+    jmp x-- bitLoop    side 1
+    push               side 0
+    set pins, 1        side 0
+.wrap
+```
+
+### I2C controller, 32 instructions
+
+Configuration: SDA and SCL are 2 adjacent pins from 0 to 7, each with an external pull-up.
+
+| Setting | Value |
+|---|---|
+| `sideCount` | 1, with `sideEn` and `sidePinDir`. The side-set pin is SCL. |
+| `outBase`, `outCount` | SDA, 1 |
+| `setBase`, `setCount` | SDA, 2. Bit 0 is SDA, bit 1 is SCL. |
+| `inBase`, `jmpPin` | SDA, SCL |
+| Shift direction | OUT and IN shift left. Autopull and autopush are off. |
+
+The program drives a pin low with a pin direction of 1, and releases the pin with a direction
+of 0. The pin output register stays 0.
+
+| Host word bits | Function |
+|---|---|
+| 15 | 1: send a START (or a repeated START) before the byte |
+| 14 | 1: send a STOP after the byte |
+| 13:6 | Data byte. For a read, use 0xFF. |
+| 5 | Level of SDA from the controller on the ACK clock. 1 for a write or for the last read byte. 0 to acknowledge a read byte. |
+
+For each byte, the RX FIFO gets 1 word: bits 8:1 hold SDA during the 8 data clocks, and bit 0
+holds SDA during the ACK clock (0 is ACK).
+
+Each bit takes 14 ticks: SCL is low for 8 ticks and high for 6 ticks. At 48 MHz, `clkDiv` 9 gives
+381 kHz (Fast-mode), and `clkDiv` 36 gives 95 kHz (Standard-mode). A target can stretch SCL for
+up to 63 ticks. A longer stretch sets flag 1, and the program stops until a restart.
+
+```
+.side_set 1 opt pindirs
+    set t, 63
+    set pindirs, 0
+.wrap_target
+nextWord:
+    pull
+    mov osr, ~osr
+    out x, 1
+    jmp x-- byteStart
+    jmp pin startHigh
+    set pindirs, 2     [3]
+    set pindirs, 0     [3]
+startHigh:
+    wait 1 gpio 1 timeout
+    jmp timeout busError [2]
+    set pindirs, 1     [3]
+    set pindirs, 3     [3]
+byteStart:
+    out y, 1
+    set x, 8
+bitLoop:
+    out pindirs, 1     side 1 [3]
+    nop                side 1 [3]
+    nop                side 0
+    wait 1 gpio 1 timeout
+    jmp timeout busError
+    in pins, 1         [1]
+    jmp x-- bitLoop
+    push               side 1 [3]
+    jmp y-- nextWord
+    set pindirs, 3     [3]
+    set pindirs, 1     [3]
+    wait 1 gpio 1 timeout
+    jmp timeout busError [2]
+    set pindirs, 0     [3]
+    nop                [3]
+.wrap
+busError:
+    flag set 1
+errorLoop:
+    jmp errorLoop
+```
+
 ### Use of the WAIT timeout (I2C clock stretch)
 
 ```
@@ -307,7 +402,7 @@ doZero:
 1. **Autopull of more than 16 bits.** WS2812B needs 24 bits for each pixel. The ISS shows that
    autopull at 8 bits, with 3 FIFO words for each pixel, keeps the exact bit timing. The cost is
    3 host writes for each pixel. Decide in week 5 if a 32-bit pull threshold is necessary.
-2. **I2C program.** Write it in the ISS in week 3. The PIO version has 18 instructions and uses
-   `OUT EXEC`. This ISA has all the instructions that it needs.
+2. **I2C program.** Closed. The I2C controller above has 32 instructions. It does not need
+   `OUT EXEC`, because the host word holds the START and STOP requests.
 3. **UART RX tolerance.** The UART RX program receives back-to-back frames with a baud error of
    ±2%. At −3%, it loses the frame alignment, because it uses 2 ticks after the stop-bit sample.
