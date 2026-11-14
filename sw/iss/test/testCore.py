@@ -171,6 +171,45 @@ def testFlagWaitStallsUntilOtherCoreClears() -> None:
     assert recordPin(machine, 20) == [(0, 0), (11, 1)]
 
 
+def testFlagChangeIsVisibleToOtherCoresOnNextCycle() -> None:
+    first = assemble("flag set 1\nwait 1 flag 7\n")
+    second = assemble("wait 1 flag 1\nset pins, 1\nwait 1 flag 7\n")
+    config = CoreConfig(setBase=firstOutput, setCount=1)
+    machine = Machine([(first, CoreConfig()), (second, config)])
+    assert recordPin(machine, 10) == [(0, 0), (3, 1)]
+
+
+def testFlagSetWinsOverClearOnSameCycle() -> None:
+    first = assemble("flag set 4\nwait 1 flag 7\n")
+    second = assemble("flag clear 4\nwait 1 flag 7\n")
+    machine = Machine([(first, CoreConfig()), (second, CoreConfig())])
+    machine.step(0)
+    assert machine.flags.isSet(4)
+
+
+def testTwoCoresWaitingOnOneFlagBothContinue() -> None:
+    waiter = assemble("wait 1 flag 2\nset pins, 1\nwait 1 flag 7\n")
+    setter = assemble("nop [3]\nflag set 2\nwait 1 flag 7\n")
+    machine = Machine(
+        [
+            (waiter, CoreConfig(setBase=firstOutput, setCount=1)),
+            (waiter, CoreConfig(setBase=firstOutput + 1, setCount=1)),
+            (setter, CoreConfig()),
+        ]
+    )
+    first = PinRecorder(firstOutput)
+    second = PinRecorder(firstOutput + 1)
+
+    def environment(cycle: int, outputs: int) -> int:
+        first.sample(cycle, outputs)
+        second.sample(cycle, outputs)
+        return 0
+
+    machine.run(12, environment)
+    assert first.edges == second.edges == [(0, 0), (7, 1)]
+    assert not machine.flags.isSet(2)
+
+
 def testBidirectionalPinDrivesOnlyWhenEnabled() -> None:
     program = assemble("set pins, 1\nset pindirs, 1\nwait 1 flag 7\n")
     machine = Machine([(program, CoreConfig(setCount=1))])

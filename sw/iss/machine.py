@@ -50,6 +50,7 @@ class Machine:
         synchronized = (delayed & ~self.syncBypass) | (inputs & self.syncBypass)
         for core in self.cores:
             core.clock(synchronized)
+        self.flags.commit()
         self.cycle += 1
 
     def run(self, cycles: int, environment: Environment) -> None:

@@ -19,15 +19,22 @@ class IssError(Exception):
 class FlagBank:
     def __init__(self) -> None:
         self.value = 0
+        self._sets = 0
+        self._clears = 0
 
     def isSet(self, index: int) -> bool:
         return bool((self.value >> index) & 1)
 
     def set(self, index: int) -> None:
-        self.value |= 1 << index
+        self._sets |= 1 << index
 
     def clear(self, index: int) -> None:
-        self.value &= ~(1 << index)
+        self._clears |= 1 << index
+
+    def commit(self) -> None:
+        self.value = (self.value & ~self._clears) | self._sets
+        self._sets = 0
+        self._clears = 0
 
 
 @dataclass(frozen=True)
@@ -461,5 +468,6 @@ class Core:
         if operation == isa.FlagOperation.wait:
             if not self._isStalled:
                 self.flags.set(index)
+                return False
             return not self.flags.isSet(index)
         raise IssError(f"reserved FLAG operation {operation} at PC {self.pc}")
