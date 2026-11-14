@@ -59,6 +59,8 @@ pytest
 | `i2cWrite`, `i2cRead`, `i2cResult` | Make the host words for `i2cController.pasm`, and decode its RX FIFO words |
 | `Ps2Device` | A PS/2 device. It sends frames, receives host commands with an ACK, and can reply to a command. It can send a frame with a bad parity. |
 | `ps2HostWord`, `ps2Result` | Make the host words for `ps2Host.pasm`, and decode and check its RX FIFO words |
+| `JtagTap` | A JTAG TAP with the 16-state controller, a 4-bit IR, IDCODE, and BYPASS |
+| `jtagWords`, `jtagShift`, `jtagTdoBits` | Make the host words for `jtag.pasm` from (TMS, TDI) pairs, and get the TDO bits |
 
 ## Results
 
@@ -74,3 +76,4 @@ The tests in `iss/test/testFirmware.py` show these results for the programs in
 | SPI mode 0 with CS | CS is low on each SCK rising edge, and high between bytes |
 | I2C controller | Write, read, a wrong address, a repeated START, and clock stretch operate. A stretch above 63 ticks sets flag 1. At 48 MHz with `clkDiv` 9, SCL is 1.5 µs low and 1.125 µs high (381 kHz). The START and STOP setup and hold times are 0.75 µs or more. |
 | PS/2 host | Receives frames and reports a parity error. Sends a command, gets the ACK, and receives the reply. At 48 MHz with `clkDiv` 48, CLK is low for 128 µs before a command. |
+| JTAG controller | Reads the IDCODE after a TAP reset. With BYPASS in the IR, a DR shift delays the data by 1 bit. `clkDiv` 1 needs the `syncBypass` bit for TDO. |

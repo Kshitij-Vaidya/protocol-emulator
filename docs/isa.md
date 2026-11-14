@@ -440,6 +440,27 @@ acked:
     wait 1 gpio 2
 ```
 
+### JTAG controller, 2 instructions
+
+Configuration: `sideCount` 1, side-set pin = TCK. `outBase` = TDI and `outCount` = 2, so TMS is
+the pin after TDI. IN pin = TDO. OUT and IN shift right. Autopull at 16 bits and autopush at 8
+bits.
+
+- Each TX FIFO word holds 8 TCK clocks. Bits [2k+1:2k] hold (TMS, TDI) for clock k.
+- Each RX FIFO word holds the 8 TDO bits of 8 clocks in bits 15:8, with the first bit in bit 8.
+- TDI and TMS change on the TCK falling edge. TDO is sampled on the TCK rising edge.
+
+Without the bypass, `clkDiv` must be 2 or more, as for SPI. With the `syncBypass` bit set for
+TDO, `clkDiv` 1 operates.
+
+```
+.side_set 1
+.wrap_target
+    out pins, 2    side 0 [1]
+    in pins, 1     side 1 [1]
+.wrap
+```
+
 ### Use of the WAIT timeout (I2C clock stretch)
 
 ```
