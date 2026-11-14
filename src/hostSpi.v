@@ -1,50 +1,34 @@
 `default_nettype none
 
-module hostSpi (
-    input  wire        clk,
-    input  wire        rstN,
-    input  wire        sck,
-    input  wire        csN,
-    input  wire        mosi,
-    output wire        miso,
-    input  wire        coreOwnsMem,
-    input  wire        active,
-    input  wire [7:0]  flags,
-    output wire        run,
-    output wire        restart,
-    output wire [7:0]  startPc,
-    output wire [15:0] clkDiv,
-    output wire [4:0]  outBase,
-    output wire [4:0]  outCount,
-    output wire [4:0]  setBase,
-    output wire [2:0]  setCount,
-    output wire [4:0]  sideBase,
-    output wire [1:0]  sideCount,
-    output wire        sideEn,
-    output wire        sidePinDir,
-    output wire [4:0]  inBase,
-    output wire [4:0]  jmpPin,
-    output wire        outShiftRight,
-    output wire        inShiftRight,
-    output wire        autoPull,
-    output wire        autoPush,
-    output wire [4:0]  pullThreshold,
-    output wire [4:0]  pushThreshold,
-    output wire [7:0]  wrapBottom,
-    output wire [7:0]  wrapTop,
-    output wire [31:0] syncBypass,
-    output wire        hostExecEn,
-    output wire [15:0] hostExecInstr,
-    output wire [7:0]  memAddr,
-    output wire        memWriteEn,
-    output wire [15:0] memWriteData,
-    input  wire [15:0] memReadData,
-    output wire        txWriteEn,
-    output wire [15:0] txWriteData,
-    input  wire [2:0]  txLevel,
-    output wire        rxReadEn,
-    input  wire [15:0] rxReadData,
-    input  wire [2:0]  rxLevel
+module hostSpi #(
+    parameter numCores    = 2,
+    parameter configWidth = 91
+) (
+    input  wire                            clk,
+    input  wire                            rstN,
+    input  wire                            sck,
+    input  wire                            csN,
+    input  wire                            mosi,
+    output wire                            miso,
+    input  wire [numCores-1:0]             coreOwnsMem,
+    input  wire [numCores-1:0]             active,
+    input  wire [7:0]                      flags,
+    output wire [numCores-1:0]             run,
+    output wire [numCores-1:0]             restart,
+    output wire [numCores*configWidth-1:0] coreConfig,
+    output wire [31:0]                     syncBypass,
+    output wire [numCores-1:0]             hostExecEn,
+    output wire [15:0]                     hostExecInstr,
+    output wire [numCores*8-1:0]           memAddr,
+    output wire [numCores-1:0]             memWriteEn,
+    output wire [15:0]                     memWriteData,
+    input  wire [numCores*16-1:0]          memReadData,
+    output wire [numCores-1:0]             txWriteEn,
+    output wire [15:0]                     txWriteData,
+    input  wire [numCores*3-1:0]           txLevel,
+    output wire [numCores-1:0]             rxReadEn,
+    input  wire [numCores*16-1:0]          rxReadData,
+    input  wire [numCores*3-1:0]           rxLevel
 );
 
     localparam [6:0] regCtrl       = 7'h00;
@@ -65,12 +49,16 @@ module hostSpi (
     localparam [6:0] regBypassLow  = 7'h0F;
     localparam [6:0] regBypassHigh = 7'h10;
     localparam [6:0] regId         = 7'h11;
+    localparam [6:0] regCoreSel    = 7'h12;
+    localparam [6:0] regRunAll     = 7'h13;
 
     localparam [15:0] idValue       = 16'h5045;
     localparam [15:0] shiftReset    = 16'b0010_0001_0000_0011;
     localparam [2:0]  fifoDepth     = 3'd4;
     localparam [1:0]  commandReload = 2'd1;
     localparam [1:0]  wordReload    = 2'd2;
+    localparam        selBits       = (numCores > 1) ? $clog2(numCores) : 1;
+    localparam        restartShift  = 4;
 
     reg  [2:0]  sckQ;
     reg  [1:0]  csQ;
@@ -85,79 +73,64 @@ module hostSpi (
     reg         wordDone;
     reg  [1:0]  reloadCount;
     reg  [15:0] readValue;
-
-    reg         runQ;
-    reg         rejected;
-    reg  [7:0]  memAddrQ;
-    reg  [7:0]  startPcQ;
-    reg  [15:0] clkDivQ;
-    reg  [15:0] pinOutQ;
-    reg  [15:0] pinSetQ;
-    reg  [15:0] pinSideQ;
-    reg  [15:0] pinInQ;
-    reg  [15:0] shiftQ;
-    reg  [15:0] wrapQ;
+    reg  [1:0]  coreSelQ;
     reg  [31:0] syncBypassQ;
+
+    wire [numCores-1:0]    runAll;
+    wire [numCores-1:0]    rejectedAll;
+    wire [numCores*8-1:0]  startPcAll;
+    wire [numCores*16-1:0] clkDivAll;
+    wire [numCores*16-1:0] pinOutAll;
+    wire [numCores*16-1:0] pinSetAll;
+    wire [numCores*16-1:0] pinSideAll;
+    wire [numCores*16-1:0] pinInAll;
+    wire [numCores*16-1:0] shiftAll;
+    wire [numCores*16-1:0] wrapAll;
 
     wire        sckRise   = sckQ[1] & ~sckQ[2];
     wire        csActive  = ~csQ[1];
     wire        writeWord = wordDone && isWrite;
     wire        readWord  = wordDone && !isWrite;
-    wire [15:0] status    = {flags, rxLevel, txLevel, rejected, active};
-    wire        isTxFull  = (txLevel == fifoDepth);
+    wire        selValid  = (coreSelQ < numCores);
+    wire [selBits-1:0] sel = selValid ? coreSelQ[selBits-1:0] : {selBits{1'b0}};
+    wire [7:0]  selStatus = {rxLevel[sel*3 +: 3], txLevel[sel*3 +: 3], rejectedAll[sel], active[sel]};
+    wire [15:0] selRxHead = (rxLevel[sel*3 +: 3] == 3'd0) ? 16'd0 : rxReadData[sel*16 +: 16];
 
     assign miso          = shiftOut[15];
-    assign run           = runQ;
-    assign restart       = writeWord && (regAddr == regCtrl) && shiftIn[1];
-    assign startPc       = startPcQ;
-    assign clkDiv        = clkDivQ;
-    assign outBase       = pinOutQ[4:0];
-    assign outCount      = pinOutQ[12:8];
-    assign setBase       = pinSetQ[4:0];
-    assign setCount      = pinSetQ[10:8];
-    assign sideBase      = pinSideQ[4:0];
-    assign sideCount     = pinSideQ[9:8];
-    assign sideEn        = pinSideQ[10];
-    assign sidePinDir    = pinSideQ[11];
-    assign inBase        = pinInQ[4:0];
-    assign jmpPin        = pinInQ[12:8];
-    assign outShiftRight = shiftQ[0];
-    assign inShiftRight  = shiftQ[1];
-    assign autoPull      = shiftQ[2];
-    assign autoPush      = shiftQ[3];
-    assign pullThreshold = shiftQ[8:4];
-    assign pushThreshold = shiftQ[13:9];
-    assign wrapBottom    = wrapQ[7:0];
-    assign wrapTop       = wrapQ[15:8];
+    assign run           = runAll;
     assign syncBypass    = syncBypassQ;
-    assign hostExecEn    = writeWord && (regAddr == regExec) && !coreOwnsMem;
     assign hostExecInstr = shiftIn;
-    assign memAddr       = memAddrQ;
-    assign memWriteEn    = writeWord && (regAddr == regMemData) && !coreOwnsMem;
     assign memWriteData  = shiftIn;
-    assign txWriteEn     = writeWord && (regAddr == regTxFifo);
     assign txWriteData   = shiftIn;
-    assign rxReadEn      = readWord && (regAddr == regRxFifo);
 
     always @(*) begin
+        readValue = 16'd0;
         case (regAddr)
-            regCtrl:       readValue = {15'd0, runQ};
-            regStatus:     readValue = status;
-            regMemAddr:    readValue = {8'd0, memAddrQ};
-            regMemData:    readValue = memReadData;
-            regStartPc:    readValue = {8'd0, startPcQ};
-            regClkDiv:     readValue = clkDivQ;
-            regPinOut:     readValue = pinOutQ;
-            regPinSet:     readValue = pinSetQ;
-            regPinSide:    readValue = pinSideQ;
-            regPinIn:      readValue = pinInQ;
-            regShift:      readValue = shiftQ;
-            regWrap:       readValue = wrapQ;
-            regRxFifo:     readValue = (rxLevel == 3'd0) ? 16'd0 : rxReadData;
+            regStatus:     readValue = {flags, selValid ? selStatus : 8'd0};
             regBypassLow:  readValue = syncBypassQ[15:0];
             regBypassHigh: readValue = syncBypassQ[31:16];
             regId:         readValue = idValue;
-            default:       readValue = 16'd0;
+            regCoreSel:    readValue = {14'd0, coreSelQ};
+            regRunAll:     readValue = {{(16 - numCores){1'b0}}, runAll};
+            default: begin
+                if (selValid) begin
+                    case (regAddr)
+                        regCtrl:     readValue = {15'd0, runAll[sel]};
+                        regMemAddr:  readValue = {8'd0, memAddr[sel*8 +: 8]};
+                        regMemData:  readValue = memReadData[sel*16 +: 16];
+                        regStartPc:  readValue = {8'd0, startPcAll[sel*8 +: 8]};
+                        regClkDiv:   readValue = clkDivAll[sel*16 +: 16];
+                        regPinOut:   readValue = pinOutAll[sel*16 +: 16];
+                        regPinSet:   readValue = pinSetAll[sel*16 +: 16];
+                        regPinSide:  readValue = pinSideAll[sel*16 +: 16];
+                        regPinIn:    readValue = pinInAll[sel*16 +: 16];
+                        regShift:    readValue = shiftAll[sel*16 +: 16];
+                        regWrap:     readValue = wrapAll[sel*16 +: 16];
+                        regRxFifo:   readValue = selRxHead;
+                        default:     readValue = 16'd0;
+                    endcase
+                end
+            end
         endcase
     end
 
@@ -214,53 +187,130 @@ module hostSpi (
 
     always @(posedge clk) begin
         if (!rstN) begin
-            runQ        <= 1'b0;
-            rejected    <= 1'b0;
-            memAddrQ    <= 8'd0;
-            startPcQ    <= 8'd0;
-            clkDivQ     <= 16'd1;
-            pinOutQ     <= 16'd0;
-            pinSetQ     <= 16'd0;
-            pinSideQ    <= 16'd0;
-            pinInQ      <= 16'd0;
-            shiftQ      <= shiftReset;
-            wrapQ       <= 16'hFF00;
+            coreSelQ    <= 2'd0;
             syncBypassQ <= 32'd0;
         end else if (writeWord) begin
             case (regAddr)
-                regCtrl: begin
-                    runQ     <= shiftIn[0];
-                    rejected <= 1'b0;
-                end
-                regMemAddr:    memAddrQ <= shiftIn[7:0];
-                regMemData: begin
-                    memAddrQ <= memAddrQ + 1'b1;
-                    if (coreOwnsMem)
-                        rejected <= 1'b1;
-                end
-                regStartPc:    startPcQ <= shiftIn[7:0];
-                regExec: begin
-                    if (coreOwnsMem)
-                        rejected <= 1'b1;
-                end
-                regClkDiv:     clkDivQ <= shiftIn;
-                regPinOut:     pinOutQ <= shiftIn;
-                regPinSet:     pinSetQ <= shiftIn;
-                regPinSide:    pinSideQ <= shiftIn;
-                regPinIn:      pinInQ <= shiftIn;
-                regShift:      shiftQ <= shiftIn;
-                regWrap:       wrapQ <= shiftIn;
-                regTxFifo: begin
-                    if (isTxFull)
-                        rejected <= 1'b1;
-                end
+                regCoreSel:    coreSelQ <= shiftIn[1:0];
                 regBypassLow:  syncBypassQ[15:0] <= shiftIn;
                 regBypassHigh: syncBypassQ[31:16] <= shiftIn;
                 default: ;
             endcase
-        end else if (readWord && regAddr == regMemData) begin
-            memAddrQ <= memAddrQ + 1'b1;
         end
     end
+
+    genvar coreIdx;
+    generate
+        for (coreIdx = 0; coreIdx < numCores; coreIdx = coreIdx + 1) begin : perCore
+            reg         runQ;
+            reg         rejected;
+            reg  [7:0]  memAddrQ;
+            reg  [7:0]  startPcQ;
+            reg  [15:0] clkDivQ;
+            reg  [15:0] pinOutQ;
+            reg  [15:0] pinSetQ;
+            reg  [15:0] pinSideQ;
+            reg  [15:0] pinInQ;
+            reg  [15:0] shiftQ;
+            reg  [15:0] wrapQ;
+
+            wire isSel      = selValid && (coreSelQ == coreIdx);
+            wire selWrite   = writeWord && isSel;
+            wire isTxFull   = (txLevel[coreIdx*3 +: 3] == fifoDepth);
+            wire runAllWord = writeWord && (regAddr == regRunAll);
+
+            assign runAll[coreIdx]                     = runQ;
+            assign rejectedAll[coreIdx]                = rejected;
+            assign startPcAll[coreIdx*8 +: 8]          = startPcQ;
+            assign clkDivAll[coreIdx*16 +: 16]         = clkDivQ;
+            assign pinOutAll[coreIdx*16 +: 16]         = pinOutQ;
+            assign pinSetAll[coreIdx*16 +: 16]         = pinSetQ;
+            assign pinSideAll[coreIdx*16 +: 16]        = pinSideQ;
+            assign pinInAll[coreIdx*16 +: 16]          = pinInQ;
+            assign shiftAll[coreIdx*16 +: 16]          = shiftQ;
+            assign wrapAll[coreIdx*16 +: 16]           = wrapQ;
+            assign memAddr[coreIdx*8 +: 8]             = memAddrQ;
+
+            assign restart[coreIdx]    = (selWrite && (regAddr == regCtrl) && shiftIn[1])
+                                         || (runAllWord && shiftIn[restartShift + coreIdx]);
+            assign hostExecEn[coreIdx] = selWrite && (regAddr == regExec) && !coreOwnsMem[coreIdx];
+            assign memWriteEn[coreIdx] = selWrite && (regAddr == regMemData) && !coreOwnsMem[coreIdx];
+            assign txWriteEn[coreIdx]  = selWrite && (regAddr == regTxFifo);
+            assign rxReadEn[coreIdx]   = readWord && isSel && (regAddr == regRxFifo);
+
+            assign coreConfig[coreIdx*configWidth +: configWidth] = {
+                startPcQ,
+                clkDivQ,
+                pinOutQ[4:0],
+                pinOutQ[12:8],
+                pinSetQ[4:0],
+                pinSetQ[10:8],
+                pinSideQ[4:0],
+                pinSideQ[9:8],
+                pinSideQ[10],
+                pinSideQ[11],
+                pinInQ[4:0],
+                pinInQ[12:8],
+                shiftQ[0],
+                shiftQ[1],
+                shiftQ[2],
+                shiftQ[3],
+                shiftQ[8:4],
+                shiftQ[13:9],
+                wrapQ[7:0],
+                wrapQ[15:8]
+            };
+
+            always @(posedge clk) begin
+                if (!rstN) begin
+                    runQ     <= 1'b0;
+                    rejected <= 1'b0;
+                    memAddrQ <= 8'd0;
+                    startPcQ <= 8'd0;
+                    clkDivQ  <= 16'd1;
+                    pinOutQ  <= 16'd0;
+                    pinSetQ  <= 16'd0;
+                    pinSideQ <= 16'd0;
+                    pinInQ   <= 16'd0;
+                    shiftQ   <= shiftReset;
+                    wrapQ    <= 16'hFF00;
+                end else if (runAllWord) begin
+                    runQ <= shiftIn[coreIdx];
+                end else if (selWrite) begin
+                    case (regAddr)
+                        regCtrl: begin
+                            runQ     <= shiftIn[0];
+                            rejected <= 1'b0;
+                        end
+                        regMemAddr: memAddrQ <= shiftIn[7:0];
+                        regMemData: begin
+                            memAddrQ <= memAddrQ + 1'b1;
+                            if (coreOwnsMem[coreIdx])
+                                rejected <= 1'b1;
+                        end
+                        regStartPc: startPcQ <= shiftIn[7:0];
+                        regExec: begin
+                            if (coreOwnsMem[coreIdx])
+                                rejected <= 1'b1;
+                        end
+                        regClkDiv:  clkDivQ <= shiftIn;
+                        regPinOut:  pinOutQ <= shiftIn;
+                        regPinSet:  pinSetQ <= shiftIn;
+                        regPinSide: pinSideQ <= shiftIn;
+                        regPinIn:   pinInQ <= shiftIn;
+                        regShift:   shiftQ <= shiftIn;
+                        regWrap:    wrapQ <= shiftIn;
+                        regTxFifo: begin
+                            if (isTxFull)
+                                rejected <= 1'b1;
+                        end
+                        default: ;
+                    endcase
+                end else if (readWord && isSel && regAddr == regMemData) begin
+                    memAddrQ <= memAddrQ + 1'b1;
+                end
+            end
+        end
+    endgenerate
 
 endmodule

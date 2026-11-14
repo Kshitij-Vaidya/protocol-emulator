@@ -2,6 +2,7 @@ import random
 from pathlib import Path
 
 import cocotb
+from cocotb.handle import LogicObject
 from cocotb.triggers import ClockCycles, RisingEdge
 from cocotbext.i2c import I2cMemory
 from cocotbext.spi import SpiBus, SpiConfig
@@ -291,3 +292,103 @@ async def testI2cFirmwareWritesAndReadsI2cMemory(dut: Dut) -> None:
     assert int(dut.sda.value) == 1
     assert int(dut.scl.value) == 1
     assert sclLow.longest >= stretchCycles
+
+
+flagShift = 8
+runAllRestartShift = 4
+pin9 = 9
+
+
+async def selectCore(dut: Dut, index: int) -> None:
+    await writeRegister(dut, Register.coreSel, [index])
+
+
+@cocotb.test()
+async def testPerCoreRegistersAreIndependent(dut: Dut) -> None:
+    await resetDut(dut)
+    registers = (Register.clkDiv, Register.pinOut, Register.startPc, Register.wrap)
+    for core in (0, 1):
+        await selectCore(dut, core)
+        for register in registers:
+            await writeRegister(dut, register, [0x0A00 + core * 0x10 + register])
+    for core in (0, 1):
+        await selectCore(dut, core)
+        for register in registers:
+            expected = 0x0A00 + core * 0x10 + register
+            if register == Register.startPc:
+                expected &= 0xFF
+            assert await readOne(dut, register) == expected
+    await selectCore(dut, 2)
+    assert await readOne(dut, Register.clkDiv) == 0
+    assert await readOne(dut, Register.coreSel) == 2
+    assert await readOne(dut, Register.id) == idValue
+
+
+@cocotb.test()
+async def testSecondCoreRunsItsOwnProgram(dut: Dut) -> None:
+    await resetDut(dut)
+    await selectCore(dut, 1)
+    program = assemble("set pins, 1\nwait 1 flag 7\n")
+    await startProgram(dut, program, CoreConfig(setBase=txPin, setCount=1))
+    await ClockCycles(dut.clk, 10)
+    assert int(dut.pin8.value) == 1
+    assert await readOne(dut, Register.status) & Status.active
+    await selectCore(dut, 0)
+    assert not await readOne(dut, Register.status) & Status.active
+
+
+@cocotb.test()
+async def testRunAllStartsBothCoresOnSameCycle(dut: Dut) -> None:
+    await resetDut(dut)
+    program = assemble("set pins, 1\nwait 1 flag 7\n")
+    for core, pin in ((0, txPin), (1, pin9)):
+        await selectCore(dut, core)
+        await loadProgram(dut, program.words)
+        for register, value in configWords(program, CoreConfig(setBase=pin, setCount=1)).items():
+            await writeRegister(dut, register, [value])
+    rises: dict[int, int] = {}
+
+    async def watch(signal: LogicObject, pin: int) -> None:
+        cycle = 0
+        while not int(signal.value):
+            await ClockCycles(dut.clk, 1)
+            cycle += 1
+        rises[pin] = cycle
+
+    cocotb.start_soon(watch(dut.pin8, txPin))
+    cocotb.start_soon(watch(dut.pin9, pin9))
+    await writeRegister(dut, Register.runAll, [0b11 | (0b11 << runAllRestartShift)])
+    await ClockCycles(dut.clk, 20)
+    assert len(rises) == 2
+    assert rises[txPin] == rises[pin9]
+    assert await readOne(dut, Register.runAll) == 0b11
+
+
+@cocotb.test()
+async def testFlagFromOneCoreReleasesTheOther(dut: Dut) -> None:
+    await resetDut(dut)
+    waiter = assemble("wait 1 flag 3\nset pins, 1\nwait 1 flag 7\n")
+    setter = assemble("flag set 5\nflag set 3\nwait 1 flag 7\n")
+    await selectCore(dut, 0)
+    await startProgram(dut, waiter, CoreConfig(setBase=txPin, setCount=1))
+    await ClockCycles(dut.clk, 20)
+    assert int(dut.pin8.value) == 0
+    await selectCore(dut, 1)
+    await startProgram(dut, setter, CoreConfig())
+    await ClockCycles(dut.clk, 20)
+    assert int(dut.pin8.value) == 1
+    for core in (0, 1):
+        await selectCore(dut, core)
+        assert await readOne(dut, Register.status) >> flagShift == 1 << 5
+
+
+@cocotb.test()
+async def testRestartClearsSharedFlags(dut: Dut) -> None:
+    await resetDut(dut)
+    await selectCore(dut, 1)
+    await startProgram(dut, assemble("flag set 6\nwait 1 flag 7\n"), CoreConfig())
+    await ClockCycles(dut.clk, 10)
+    assert await readOne(dut, Register.status) >> flagShift == 1 << 6
+    await selectCore(dut, 0)
+    await writeRegister(dut, Register.ctrl, [0b10])
+    assert await readOne(dut, Register.status) >> flagShift == 0

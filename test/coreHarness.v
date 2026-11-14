@@ -52,6 +52,9 @@ module coreHarness (
     wire [7:0]  fetchAddr;
     wire [15:0] fetchData;
     wire        coreOwnsMem = run | active;
+    wire [7:0]  flags;
+    wire [7:0]  flagSets;
+    wire [7:0]  flagClears;
 
     pinSync #(
         .width(32)
@@ -61,6 +64,17 @@ module coreHarness (
         .pinsIn (pinsIn),
         .bypass (syncBypass),
         .pinsOut(pinsSynced)
+    );
+
+    flagBank #(
+        .width(8)
+    ) flagBankInst (
+        .clk   (clk),
+        .rstN  (rstN),
+        .clear (restart),
+        .sets  (flagSets),
+        .clears(flagClears),
+        .flags (flags)
     );
 
     progMem #(
@@ -113,6 +127,9 @@ module coreHarness (
         .txLevel      (txLevel),
         .rxLevel      (rxLevel),
         .status       (status),
+        .flags        (flags),
+        .flagSets     (flagSets),
+        .flagClears   (flagClears),
         .pinOut       (pinOut),
         .pinDir       (pinDir)
     );

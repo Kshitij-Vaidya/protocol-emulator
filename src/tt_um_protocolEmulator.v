@@ -11,55 +11,42 @@ module tt_um_protocolEmulator (
     input  wire       rst_n
 );
 
-    localparam addrWidth = 8;
-    localparam dataWidth = 16;
-    localparam pinWidth  = 32;
+    localparam numCores    = 2;
+    localparam dataWidth   = 16;
+    localparam pinWidth    = 32;
+    localparam configWidth = 91;
 
-    wire [pinWidth-1:0]  pinsIn = {12'd0, ui_in[7:3], 7'd0, uio_in};
-    wire [pinWidth-1:0]  pinsSynced;
-    wire [pinWidth-1:0]  pinOut;
-    wire [pinWidth-1:0]  pinDir;
-    wire [pinWidth-1:0]  syncBypass;
+    wire [pinWidth-1:0]             pinsIn = {12'd0, ui_in[7:3], 7'd0, uio_in};
+    wire [pinWidth-1:0]             pinsSynced;
+    wire [pinWidth-1:0]             syncBypass;
 
-    wire                 miso;
-    wire                 run;
-    wire                 restart;
-    wire                 active;
-    wire                 coreOwnsMem = run | active;
-    wire [7:0]           startPc;
-    wire [15:0]          clkDiv;
-    wire [4:0]           outBase;
-    wire [4:0]           outCount;
-    wire [4:0]           setBase;
-    wire [2:0]           setCount;
-    wire [4:0]           sideBase;
-    wire [1:0]           sideCount;
-    wire                 sideEn;
-    wire                 sidePinDir;
-    wire [4:0]           inBase;
-    wire [4:0]           jmpPin;
-    wire                 outShiftRight;
-    wire                 inShiftRight;
-    wire                 autoPull;
-    wire                 autoPush;
-    wire [4:0]           pullThreshold;
-    wire [4:0]           pushThreshold;
-    wire [7:0]           wrapBottom;
-    wire [7:0]           wrapTop;
-    wire                 hostExecEn;
-    wire [dataWidth-1:0] hostExecInstr;
-    wire [addrWidth-1:0] memAddr;
-    wire                 memWriteEn;
-    wire [dataWidth-1:0] memWriteData;
-    wire [addrWidth-1:0] fetchAddr;
-    wire [dataWidth-1:0] memReadData;
-    wire                 txWriteEn;
-    wire [dataWidth-1:0] txWriteData;
-    wire                 rxReadEn;
-    wire [dataWidth-1:0] rxReadData;
-    wire [2:0]           txLevel;
-    wire [2:0]           rxLevel;
-    wire [dataWidth-1:0] coreStatus;
+    wire                            miso;
+    wire [numCores-1:0]             run;
+    wire [numCores-1:0]             restart;
+    wire [numCores*configWidth-1:0] coreConfig;
+    wire [numCores-1:0]             hostExecEn;
+    wire [dataWidth-1:0]            hostExecInstr;
+    wire [numCores*8-1:0]           memAddr;
+    wire [numCores-1:0]             memWriteEn;
+    wire [dataWidth-1:0]            memWriteData;
+    wire [numCores*dataWidth-1:0]   memReadData;
+    wire [numCores-1:0]             txWriteEn;
+    wire [dataWidth-1:0]            txWriteData;
+    wire [numCores*3-1:0]           txLevel;
+    wire [numCores-1:0]             rxReadEn;
+    wire [numCores*dataWidth-1:0]   rxReadData;
+    wire [numCores*3-1:0]           rxLevel;
+    wire [numCores-1:0]             ownsMem;
+    wire [numCores-1:0]             active;
+    wire [numCores*dataWidth-1:0]   status;
+    wire [numCores*pinWidth-1:0]    pinOut;
+    wire [numCores*pinWidth-1:0]    pinDir;
+    wire [numCores*8-1:0]           flagSets;
+    wire [numCores*8-1:0]           flagClears;
+    wire [7:0]                      flags;
+
+    wire [pinWidth-1:0] pinOutAll = pinOut[0 +: pinWidth] | pinOut[pinWidth +: pinWidth];
+    wire [pinWidth-1:0] pinDirAll = pinDir[0 +: pinWidth] | pinDir[pinWidth +: pinWidth];
 
     pinSync #(
         .width(pinWidth)
@@ -71,38 +58,33 @@ module tt_um_protocolEmulator (
         .pinsOut(pinsSynced)
     );
 
-    hostSpi hostSpiInst (
+    flagBank #(
+        .width(8)
+    ) flagBankInst (
+        .clk   (clk),
+        .rstN  (rst_n),
+        .clear (|restart),
+        .sets  (flagSets[0 +: 8] | flagSets[8 +: 8]),
+        .clears(flagClears[0 +: 8] | flagClears[8 +: 8]),
+        .flags (flags)
+    );
+
+    hostSpi #(
+        .numCores   (numCores),
+        .configWidth(configWidth)
+    ) hostSpiInst (
         .clk          (clk),
         .rstN         (rst_n),
         .sck          (ui_in[0]),
         .csN          (ui_in[1]),
         .mosi         (ui_in[2]),
         .miso         (miso),
-        .coreOwnsMem  (coreOwnsMem),
+        .coreOwnsMem  (ownsMem),
         .active       (active),
-        .flags        (coreStatus[15:8]),
+        .flags        (flags),
         .run          (run),
         .restart      (restart),
-        .startPc      (startPc),
-        .clkDiv       (clkDiv),
-        .outBase      (outBase),
-        .outCount     (outCount),
-        .setBase      (setBase),
-        .setCount     (setCount),
-        .sideBase     (sideBase),
-        .sideCount    (sideCount),
-        .sideEn       (sideEn),
-        .sidePinDir   (sidePinDir),
-        .inBase       (inBase),
-        .jmpPin       (jmpPin),
-        .outShiftRight(outShiftRight),
-        .inShiftRight (inShiftRight),
-        .autoPull     (autoPull),
-        .autoPush     (autoPush),
-        .pullThreshold(pullThreshold),
-        .pushThreshold(pushThreshold),
-        .wrapBottom   (wrapBottom),
-        .wrapTop      (wrapTop),
+        .coreConfig   (coreConfig),
         .syncBypass   (syncBypass),
         .hostExecEn   (hostExecEn),
         .hostExecInstr(hostExecInstr),
@@ -118,64 +100,72 @@ module tt_um_protocolEmulator (
         .rxLevel      (rxLevel)
     );
 
-    progMem #(
-        .addrWidth(addrWidth),
-        .dataWidth(dataWidth)
-    ) progMemInst (
-        .clk      (clk),
-        .memEn    (1'b1),
-        .addr     (coreOwnsMem ? fetchAddr : memAddr),
-        .writeData(memWriteData),
-        .writeEn  (memWriteEn),
-        .readData (memReadData)
-    );
-
-    core coreInst (
+    coreSlice #(
+        .configWidth(configWidth)
+    ) coreSlice0 (
         .clk          (clk),
         .rstN         (rst_n),
-        .run          (run),
-        .restart      (restart),
-        .startPc      (startPc),
-        .clkDiv       (clkDiv),
-        .outBase      (outBase),
-        .outCount     (outCount),
-        .setBase      (setBase),
-        .setCount     (setCount),
-        .sideBase     (sideBase),
-        .sideCount    (sideCount),
-        .sideEn       (sideEn),
-        .sidePinDir   (sidePinDir),
-        .inBase       (inBase),
-        .jmpPin       (jmpPin),
-        .outShiftRight(outShiftRight),
-        .inShiftRight (inShiftRight),
-        .autoPull     (autoPull),
-        .autoPush     (autoPush),
-        .pullThreshold(pullThreshold),
-        .pushThreshold(pushThreshold),
-        .wrapBottom   (wrapBottom),
-        .wrapTop      (wrapTop),
+        .run          (run[0]),
+        .restart      (restart[0]),
+        .coreConfig   (coreConfig[0 +: configWidth]),
         .pinsIn       (pinsSynced),
-        .active       (active),
-        .fetchAddr    (fetchAddr),
-        .fetchData    (memReadData),
-        .hostExecEn   (hostExecEn),
+        .memAddr      (memAddr[0 +: 8]),
+        .memWriteEn   (memWriteEn[0]),
+        .memWriteData (memWriteData),
+        .memReadData  (memReadData[0 +: dataWidth]),
+        .ownsMem      (ownsMem[0]),
+        .active       (active[0]),
+        .hostExecEn   (hostExecEn[0]),
         .hostExecInstr(hostExecInstr),
-        .txWriteEn    (txWriteEn),
+        .txWriteEn    (txWriteEn[0]),
         .txWriteData  (txWriteData),
-        .rxReadEn     (rxReadEn),
-        .rxReadData   (rxReadData),
-        .txLevel      (txLevel),
-        .rxLevel      (rxLevel),
-        .status       (coreStatus),
-        .pinOut       (pinOut),
-        .pinDir       (pinDir)
+        .rxReadEn     (rxReadEn[0]),
+        .rxReadData   (rxReadData[0 +: dataWidth]),
+        .txLevel      (txLevel[0 +: 3]),
+        .rxLevel      (rxLevel[0 +: 3]),
+        .status       (status[0 +: dataWidth]),
+        .flags        (flags),
+        .flagSets     (flagSets[0 +: 8]),
+        .flagClears   (flagClears[0 +: 8]),
+        .pinOut       (pinOut[0 +: pinWidth]),
+        .pinDir       (pinDir[0 +: pinWidth])
     );
 
-    assign uo_out  = {pinOut[14:8], miso};
-    assign uio_out = pinOut[7:0];
-    assign uio_oe  = pinDir[7:0];
+    coreSlice #(
+        .configWidth(configWidth)
+    ) coreSlice1 (
+        .clk          (clk),
+        .rstN         (rst_n),
+        .run          (run[1]),
+        .restart      (restart[1]),
+        .coreConfig   (coreConfig[configWidth +: configWidth]),
+        .pinsIn       (pinsSynced),
+        .memAddr      (memAddr[8 +: 8]),
+        .memWriteEn   (memWriteEn[1]),
+        .memWriteData (memWriteData),
+        .memReadData  (memReadData[dataWidth +: dataWidth]),
+        .ownsMem      (ownsMem[1]),
+        .active       (active[1]),
+        .hostExecEn   (hostExecEn[1]),
+        .hostExecInstr(hostExecInstr),
+        .txWriteEn    (txWriteEn[1]),
+        .txWriteData  (txWriteData),
+        .rxReadEn     (rxReadEn[1]),
+        .rxReadData   (rxReadData[dataWidth +: dataWidth]),
+        .txLevel      (txLevel[3 +: 3]),
+        .rxLevel      (rxLevel[3 +: 3]),
+        .status       (status[dataWidth +: dataWidth]),
+        .flags        (flags),
+        .flagSets     (flagSets[8 +: 8]),
+        .flagClears   (flagClears[8 +: 8]),
+        .pinOut       (pinOut[pinWidth +: pinWidth]),
+        .pinDir       (pinDir[pinWidth +: pinWidth])
+    );
 
-    wire unusedSignals = &{ena, coreStatus[7:0], pinOut[31:15], pinDir[31:8], 1'b0};
+    assign uo_out  = {pinOutAll[14:8], miso};
+    assign uio_out = pinOutAll[7:0];
+    assign uio_oe  = pinDirAll[7:0];
+
+    wire unusedSignals = &{ena, status, pinOutAll[31:15], pinDirAll[31:8], 1'b0};
 
 endmodule

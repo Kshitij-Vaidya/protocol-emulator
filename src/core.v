@@ -38,6 +38,9 @@ module core (
     output wire [2:0]  txLevel,
     output wire [2:0]  rxLevel,
     output wire [15:0] status,
+    input  wire [7:0]  flags,
+    output reg  [7:0]  flagSets,
+    output reg  [7:0]  flagClears,
     output reg  [31:0] pinOut,
     output reg  [31:0] pinDir
 );
@@ -72,7 +75,6 @@ module core (
     reg                 pendingExecValid;
     reg                 isStalled;
     reg                 timeoutFlag;
-    reg [7:0]           flags;
 
     reg [7:0]           pcNext;
     reg [dataWidth-1:0] xNext;
@@ -88,7 +90,6 @@ module core (
     reg                 isStalledNext;
     reg                 timeoutFlagNext;
     reg [3:0]           delayCountNext;
-    reg [7:0]           flagsNext;
     reg [pinWidth-1:0]  pinOutNext;
     reg [pinWidth-1:0]  pinDirNext;
     reg                 complete;
@@ -345,7 +346,8 @@ module core (
         isStalledNext        = isStalled;
         timeoutFlagNext      = timeoutFlag;
         delayCountNext       = delayCount;
-        flagsNext            = flags;
+        flagSets             = 8'd0;
+        flagClears           = 8'd0;
         pinOutNext           = pinOut;
         pinDirNext           = pinDir;
         complete             = 1'b0;
@@ -379,7 +381,7 @@ module core (
                     if (waitLevel == ops[8]) begin
                         complete = 1'b1;
                         if (ops[7:6] == 2'd2 && ops[8])
-                            flagsNext[ops[2:0]] = 1'b0;
+                            flagClears[ops[2:0]] = 1'b1;
                     end else if (ops[5]) begin
                         if (waitStart == 16'd0) begin
                             complete        = 1'b1;
@@ -498,16 +500,16 @@ module core (
                 opFlag: begin
                     case (ops[8:7])
                         2'd0: begin
-                            complete            = 1'b1;
-                            flagsNext[ops[2:0]] = 1'b1;
+                            complete           = 1'b1;
+                            flagSets[ops[2:0]] = 1'b1;
                         end
                         2'd1: begin
-                            complete            = 1'b1;
-                            flagsNext[ops[2:0]] = 1'b0;
+                            complete             = 1'b1;
+                            flagClears[ops[2:0]] = 1'b1;
                         end
                         2'd2: begin
                             if (!stalled)
-                                flagsNext[ops[2:0]] = 1'b1;
+                                flagSets[ops[2:0]] = 1'b1;
                             else
                                 complete = !flags[ops[2:0]];
                         end
@@ -554,7 +556,6 @@ module core (
             pendingExecValid <= 1'b0;
             isStalled        <= 1'b0;
             timeoutFlag      <= 1'b0;
-            flags            <= 8'd0;
             pinOut           <= 32'd0;
             pinDir           <= 32'd0;
         end else begin
@@ -574,7 +575,6 @@ module core (
             pendingExecValid <= pendingExecValidNext;
             isStalled        <= isStalledNext;
             timeoutFlag      <= timeoutFlagNext;
-            flags            <= flagsNext;
             pinOut           <= pinOutNext;
             pinDir           <= pinDirNext;
             if (halting) begin
@@ -597,6 +597,7 @@ module core (
         if (!pastValid)
             assume (!rstN);
         assert (!(hostExec && tick));
+        assert (execute || (flagSets == 8'd0 && flagClears == 8'd0));
         if (running) begin
             assert (isrCount <= fullCount);
             assert (osrCount <= fullCount);
@@ -609,7 +610,7 @@ module core (
                 assert (pc == 8'd0 && !activeQ && !isStalled && !pendingExecValid);
             if ($past(rstN && restart))
                 assert (pc == $past(startPc) && !activeQ && delayCount == 4'd0 && !isStalled
-                        && !pendingExecValid && flags == 8'd0 && pinDir == 32'd0);
+                        && !pendingExecValid && pinDir == 32'd0);
             if ($past(running) && $stable(clkDiv))
                 assert (!activeQ || divCount <= divLimit);
             if ($past(running && halting))
@@ -617,7 +618,7 @@ module core (
             if ($past(running && !execute && !halting)) begin
                 assert ($stable(pc) && $stable(x) && $stable(y) && $stable(t));
                 assert ($stable(isr) && $stable(osr) && $stable(isrCount) && $stable(osrCount));
-                assert ($stable(flags) && $stable(pinOut) && $stable(pinDir));
+                assert ($stable(pinOut) && $stable(pinDir));
                 assert ($stable(pendingExecValid) && $stable(isStalled));
             end
             if ($past(running && tick && delayCount != 4'd0 && !halting))

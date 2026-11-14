@@ -2,7 +2,7 @@ SIM ?= icarus
 FST ?= -fst
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = tt_um_protocolEmulator.v hostSpi.v core.v fifo.v pinSync.v progMem.v sram_bb.v
+PROJECT_SOURCES = tt_um_protocolEmulator.v hostSpi.v coreSlice.v core.v flagBank.v fifo.v pinSync.v progMem.v sram_bb.v
 
 SRAM_MODEL = $(PWD)/sram_model/RM_IHPSG13_1P_256x16_c2_bm_bist.v $(PWD)/sram_model/RM_IHPSG13_1P_core_behavioral_bm_bist.v
 VERILOG_SOURCES += $(SRAM_MODEL)
