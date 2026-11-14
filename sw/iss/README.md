@@ -40,7 +40,8 @@ pytest
    ignored.
 8. A flag change by any core is visible to all cores on the next cycle (ADR-0010). If 1 core
    sets a flag and another core clears it on the same cycle, the set wins.
-9. Outputs from different cores are combined with OR.
+9. The output levels of the cores are combined with OR, and the output enables are combined
+   with OR. A core must keep the output level 0 on each pin that another core drives.
 10. A host write or read of a FIFO on cycle c takes effect at the end of cycle c. The core sees
     the FIFO state from before the host access on cycle c.
 
