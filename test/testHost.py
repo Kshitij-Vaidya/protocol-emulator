@@ -2,7 +2,8 @@ import random
 from pathlib import Path
 
 import cocotb
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, RisingEdge
+from cocotbext.i2c import I2cMemory
 from cocotbext.spi import SpiBus, SpiConfig
 from cocotbext.spi.devices.generic import SpiSlaveLoopback
 from cocotbext.uart import UartSink, UartSource
@@ -23,6 +24,7 @@ from hostInterface import (
     writeRegister,
 )
 from iss.core import CoreConfig
+from iss.models import i2cRead, i2cResult, i2cWrite
 
 examplesDir = Path(__file__).resolve().parent.parent / "sw" / "asm" / "examples"
 programWords = 256
@@ -36,6 +38,13 @@ spiMosiPin = 10
 spiCsPin = 11
 spiMisoPin = 16
 byteMask = 0xFF
+sdaPin = 0
+sclPin = 1
+i2cAddress = 0x50
+fifoDepth = 4
+rxLevelShift = 5
+rxLevelMask = 0x7
+stretchCycles = 100
 
 
 def loadExample(name: str) -> Program:
@@ -190,3 +199,95 @@ async def testClockDividerWriteWhileRunningTakesEffect(dut: Dut) -> None:
         await ClockCycles(dut.clk, 1)
         levels.add(int(dut.pin8.value))
     assert levels == {0, 1}
+
+
+class StretchingMemory(I2cMemory):
+    def __init__(self, dut: Dut, cycles: int, address: int) -> None:
+        self._clk = dut.clk
+        self._cycles = cycles
+        super().__init__(
+            sda=dut.sda, sda_o=dut.sdaTarget, scl=dut.scl, scl_o=dut.sclTarget, addr=address
+        )
+
+    async def handle_write(self, data: int) -> None:
+        await ClockCycles(self._clk, self._cycles)
+        await super().handle_write(data)
+
+
+class LowMonitor:
+    def __init__(self, dut: Dut) -> None:
+        self.longest = 0
+        cocotb.start_soon(self._run(dut))
+
+    async def _run(self, dut: Dut) -> None:
+        current = 0
+        while True:
+            await RisingEdge(dut.clk)
+            current = current + 1 if not int(dut.scl.value) else 0
+            self.longest = max(self.longest, current)
+
+
+async def rxLevel(dut: Dut) -> int:
+    return (await readOne(dut, Register.status) >> rxLevelShift) & rxLevelMask
+
+
+async def i2cTransfer(dut: Dut, words: list[int]) -> list[tuple[int, bool]]:
+    results: list[tuple[int, bool]] = []
+    for first in range(0, len(words), fifoDepth):
+        chunk = words[first : first + fifoDepth]
+        await writeRegister(dut, Register.txFifo, chunk)
+        for _ in range(200):
+            if await rxLevel(dut) == len(chunk):
+                break
+            await ClockCycles(dut.clk, 100)
+        results.extend(i2cResult(word) for word in await readRegister(dut, Register.rxFifo, len(chunk)))
+    return results
+
+
+@cocotb.test()
+async def testI2cFirmwareWritesAndReadsI2cMemory(dut: Dut) -> None:
+    await resetDut(dut)
+    memory = StretchingMemory(dut, stretchCycles, i2cAddress)
+    sclLow = LowMonitor(dut)
+    memory.write_mem(0x20, bytes([0x5E, 0xA1]))
+    config = CoreConfig(
+        clkDiv=4,
+        outBase=sdaPin,
+        outCount=1,
+        setBase=sdaPin,
+        setCount=2,
+        sideBase=sclPin,
+        inBase=sdaPin,
+        jmpPin=sclPin,
+        outShiftRight=False,
+        inShiftRight=False,
+    )
+    await startProgram(dut, loadExample("i2cController"), config)
+    writeAddress = i2cAddress << 1
+    readAddress = writeAddress | 1
+    written = await i2cTransfer(
+        dut,
+        [i2cWrite(writeAddress, start=True), i2cWrite(0x10), i2cWrite(0xC3), i2cWrite(0x3C, stop=True)],
+    )
+    assert written == [(writeAddress, True), (0x10, True), (0xC3, True), (0x3C, True)]
+    assert memory.read_mem(0x10, 2) == bytes([0xC3, 0x3C])
+    read = await i2cTransfer(
+        dut,
+        [
+            i2cWrite(writeAddress, start=True),
+            i2cWrite(0x20),
+            i2cWrite(readAddress, start=True),
+            i2cRead(ack=True),
+            i2cRead(ack=False, stop=True),
+        ],
+    )
+    assert read == [
+        (writeAddress, True),
+        (0x20, True),
+        (readAddress, True),
+        (0x5E, True),
+        (0xA1, False),
+    ]
+    assert int(dut.sda.value) == 1
+    assert int(dut.scl.value) == 1
+    assert sclLow.longest >= stretchCycles

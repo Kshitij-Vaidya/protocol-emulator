@@ -12,7 +12,7 @@ from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, RisingEdge
 from asm.assembler import Program, assemble
 from iss.core import CoreConfig, IssError
 from iss.machine import Machine, bidirectionalMask, outputOnlyMask
-from iss.models import SpiTarget, UartFrame, UartSource
+from iss.models import I2cTarget, SpiTarget, UartFrame, UartSource, i2cRead, i2cResult, i2cWrite
 from functionalCoverage import ExecuteSample, FunctionalCoverage, StateSample
 from programGenerator import randomEnvironment, randomHostReads, randomScenario
 
@@ -23,6 +23,7 @@ outputMask = bidirectionalMask | outputOnlyMask
 stateNames = ("pc", "x", "y", "t", "isr", "osr", "isrCount", "osrCount", "timeoutFlag")
 
 Environment = Callable[[int, int], int]
+EnvironmentFactory = Callable[[Machine], Environment]
 HostReads = Callable[[int], bool]
 
 
@@ -32,6 +33,7 @@ class Scenario:
     config: CoreConfig
     cycles: int
     environment: Environment = lambda cycle, outputs: 0
+    environmentFactory: EnvironmentFactory | None = None
     hostWords: Sequence[int] = ()
     hostReads: HostReads = lambda cycle: True
     syncBypass: int = 0
@@ -171,6 +173,11 @@ async def runLockstep(dut: Any, scenario: Scenario) -> int:
         [(scenario.program, scenario.config)], scenario.syncBypass, scenario.idleInputs
     )
     core = machine.cores[0]
+    environment = (
+        scenario.environment
+        if scenario.environmentFactory is None
+        else scenario.environmentFactory(machine)
+    )
     pending = deque(scenario.hostWords)
     dut.run.value = 1
     await RisingEdge(dut.clk)
@@ -179,7 +186,7 @@ async def runLockstep(dut: Any, scenario: Scenario) -> int:
     wrap = (scenario.program.wrapBottom, scenario.program.wrapTop)
     for cycle in range(scenario.cycles):
         await FallingEdge(dut.clk)
-        inputs = scenario.environment(cycle, machine.outputs)
+        inputs = environment(cycle, machine.outputs)
         dut.pinsIn.value = inputs
         isWrite = bool(pending) and core.hostWrite(pending[0])
         dut.txWriteEn.value = int(isWrite)
@@ -287,6 +294,65 @@ async def testWs2812Lockstep(dut: Any) -> None:
     hostWords = [0xA5 << byteShift, 0x0F << byteShift]
     scenario = Scenario(loadExample("ws2812b"), config, 300, hostWords=hostWords)
     await runLockstep(dut, scenario)
+
+
+@cocotb.test()
+async def testI2cLockstep(dut: Any) -> None:
+    startClock(dut)
+    sdaPin, sclPin, address = 0, 1, 0x42
+    target = I2cTarget(address, readData=[0x5E, 0xA1], stretchCycles=40)
+
+    def environmentFactory(machine: Machine) -> Environment:
+        def busLevels() -> tuple[int, int]:
+            enables = machine.outputEnables
+            scl = int(not ((enables >> sclPin) & 1 or target.sclDrive))
+            sda = int(not ((enables >> sdaPin) & 1 or target.sdaDrive))
+            return scl, sda
+
+        def environment(cycle: int, outputs: int) -> int:
+            target.update(*busLevels())
+            scl, sda = busLevels()
+            return (scl << sclPin) | (sda << sdaPin)
+
+        return environment
+
+    config = CoreConfig(
+        clkDiv=2,
+        outBase=sdaPin,
+        outCount=1,
+        setBase=sdaPin,
+        setCount=2,
+        sideBase=sclPin,
+        inBase=sdaPin,
+        jmpPin=sclPin,
+        outShiftRight=False,
+        inShiftRight=False,
+    )
+    words = [
+        i2cWrite(address << 1, start=True),
+        i2cWrite(0x07),
+        i2cWrite((address << 1) | 1, start=True),
+        i2cRead(ack=True),
+        i2cRead(ack=False, stop=True),
+    ]
+    scenario = Scenario(
+        loadExample("i2cController"),
+        config,
+        2400,
+        environmentFactory=environmentFactory,
+        hostWords=words,
+        idleInputs=(1 << sdaPin) | (1 << sclPin),
+    )
+    await runLockstep(dut, scenario)
+    assert target.received == [0x07]
+    assert [i2cResult(word) for word in scenario.received] == [
+        (address << 1, True),
+        (0x07, True),
+        ((address << 1) | 1, True),
+        (0x5E, True),
+        (0xA1, False),
+    ]
+    assert (target.starts, target.stops) == (2, 1)
 
 
 directedPrograms = {

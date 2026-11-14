@@ -17,11 +17,17 @@ module tb ();
     reg        pin15;
     reg        pin16;
     reg  [2:0] pins17To19;
-    reg  [7:0] uio_in;
+    reg  [7:0] uioExternal;
+    reg        sdaTarget;
+    reg        sclTarget;
     wire [7:0] ui_in = {pins17To19, pin16, pin15, hostMosi, hostCsN, hostSck};
     wire [7:0] uo_out;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
+    wire [7:0] uioDriveLow = uio_oe & ~uio_out;
+    wire [7:0] uio_in      = ~uioDriveLow & uioExternal & {6'b111111, sclTarget, sdaTarget};
+    wire       sda         = uio_in[0];
+    wire       scl         = uio_in[1];
 
     wire       hostMiso = uo_out[0];
     wire       pin8     = uo_out[1];

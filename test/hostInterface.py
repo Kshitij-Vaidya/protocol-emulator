@@ -34,7 +34,11 @@ class Dut(Protocol):
     pin9: LogicObject
     pin10: LogicObject
     pin11: LogicObject
-    uio_in: LogicArrayObject
+    uioExternal: LogicArrayObject
+    sdaTarget: LogicObject
+    sclTarget: LogicObject
+    sda: LogicObject
+    scl: LogicObject
     uio_out: LogicArrayObject
     uio_oe: LogicArrayObject
     uo_out: LogicArrayObject
@@ -75,7 +79,9 @@ async def resetDut(dut: Dut) -> None:
     dut.pin15.value = 1
     dut.pin16.value = 0
     dut.pins17To19.value = 0
-    dut.uio_in.value = 0
+    dut.uioExternal.value = 0xFF
+    dut.sdaTarget.value = 1
+    dut.sclTarget.value = 1
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
