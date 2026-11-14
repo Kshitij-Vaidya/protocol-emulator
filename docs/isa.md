@@ -220,24 +220,30 @@ bitLoop:
     jmp x-- bitLoop    [2]  ; 4 ticks for each bit
 ```
 
-### UART RX (8N1) with framing check, 9 instructions
+### UART RX (8N1) with framing check, 10 instructions
 
 Configuration: `sideCount` 0, IN pin and `jmpPin` = RX. 8 ticks for each bit.
 
 ```
 start:
     wait 0 pin 0            ; start bit
-    set x, 7           [10] ; 12 ticks from the edge: the center of data bit 0
+    set x, 6           [10] ; 12 ticks from the edge: the center of data bit 0
 bitLoop:
     in pins, 1
-    jmp x-- bitLoop    [6]  ; 8 ticks for each bit
-    jmp pin goodStop
+    jmp x-- bitLoop    [6]  ; 8 ticks for each bit, data bits 0-6
+    in pins, 1         [6]  ; data bit 7
+    jmp pin goodStop        ; stop bit, 75 ticks from the edge
     flag set 0              ; framing error or break
     wait 1 pin 0            ; wait for the idle line
     jmp start
 goodStop:
     push
 ```
+
+The program reads data bit 7 outside the loop. Thus the stop bit check comes 1 tick earlier,
+and the program waits for the next start bit 77 ticks after the start edge. A frame is 80 ticks.
+The ISS receives back-to-back frames with a bit-time error from −3.5% (a fast sender) to +4.0%
+(a slow sender).
 
 ### SPI controller, mode 0 (CPHA 0), 2 instructions
 
@@ -399,10 +405,9 @@ errorLoop:
 
 ## Open questions
 
-1. **Autopull of more than 16 bits.** WS2812B needs 24 bits for each pixel. The ISS shows that
-   autopull at 8 bits, with 3 FIFO words for each pixel, keeps the exact bit timing. The cost is
-   3 host writes for each pixel. Decide in week 5 if a 32-bit pull threshold is necessary.
+1. **Autopull of more than 16 bits.** Closed. The data width stays 16 bits. WS2812B uses autopull
+   at 8 bits, with 3 FIFO words for each pixel. The bit timing is exact.
 2. **I2C program.** Closed. The I2C controller above has 32 instructions. It does not need
    `OUT EXEC`, because the host word holds the START and STOP requests.
-3. **UART RX tolerance.** The UART RX program receives back-to-back frames with a baud error of
-   ±2%. At −3%, it loses the frame alignment, because it uses 2 ticks after the stop-bit sample.
+3. **UART RX tolerance.** Closed. The UART RX program now receives back-to-back frames from a
+   bit-time error of −3.5% (a fast sender) to +4.0%. Before the change, the range was −2.5% to +5.5%.

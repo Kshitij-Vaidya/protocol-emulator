@@ -65,7 +65,7 @@ The tests in `iss/test/testFirmware.py` show these results for the programs in
 | Program | Result |
 |---|---|
 | UART TX | Each edge is on an exact bit boundary. `clkDiv` 104 gives 115200 baud (+0.16%) at 48 MHz. |
-| UART RX | Back-to-back frames are received with a baud error of ±2%. At −3%, the receiver loses the frame alignment after 4 frames. |
+| UART RX | Back-to-back frames are received with a bit-time error from −3.5% (a fast sender) to +4.0% (a slow sender). The tests check ±3%. |
 | SPI mode 0 | Without the bypass, `clkDiv` must be 2 or more (SCK 6 MHz at 48 MHz). With the `syncBypass` bit set for MISO, `clkDiv` 1 (SCK 12 MHz) operates. |
 | WS2812B | T0H, T0L, T1H, and T1L are inside the datasheet limits at 48 MHz with `clkDiv` 6 |
 | SPI mode 0 with CS | CS is low on each SCK rising edge, and high between bytes |
