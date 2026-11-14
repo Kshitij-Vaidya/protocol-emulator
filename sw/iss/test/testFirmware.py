@@ -109,7 +109,7 @@ def runUartRx(sources: Sequence[UartSource], clkDiv: int, cycles: int) -> tuple[
     return machine, received
 
 
-@pytest.mark.parametrize("baudError", [-0.02, 0.0, 0.02])
+@pytest.mark.parametrize("baudError", [-0.03, 0.0, 0.03])
 @pytest.mark.parametrize("clkDiv", [1, 13, 52])
 def testUartRxReceivesBytes(clkDiv: int, baudError: float) -> None:
     cyclesPerBit = uartRxTicksPerBit * clkDiv * (1 + baudError)
