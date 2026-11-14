@@ -16,3 +16,4 @@ ADR-NNNN.
 | [0007](0007-clock-target.md) | Clock target | Accepted |
 | [0008](0008-timing-closure.md) | Timing closure | Accepted |
 | [0009](0009-tile-size.md) | Tile size | Accepted |
+| [0010](0010-multi-core.md) | Multi-core interface | Accepted |
