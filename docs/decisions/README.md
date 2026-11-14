@@ -17,3 +17,4 @@ ADR-NNNN.
 | [0008](0008-timing-closure.md) | Timing closure | Accepted |
 | [0009](0009-tile-size.md) | Tile size | Accepted |
 | [0010](0010-multi-core.md) | Multi-core interface | Accepted |
+| [0011](0011-stretch-protocols.md) | Stretch protocols | Accepted |

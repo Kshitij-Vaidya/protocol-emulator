@@ -203,7 +203,7 @@ Write an ADR for each decision.
 | Clock target | Calculated from the protocol table and the STA results on IHP | Week 2; check again in week 7 | Accepted: STA at 20 ns (50 MHz); operation at 50 MHz or less; demo at 48 MHz. Refer to ADR-0007. |
 | Timing model | 1 cycle for each instruction (as in PIO), or variable timing with a delay field | Week 3 | Accepted: PIO model with an integer clock divider and a `WAIT` with a timeout. Refer to ADR-0004. |
 | Host interface | TX and RX FIFOs (as in PIO), register window, or mailbox | Week 3 | Accepted: SPI target (mode 0) with a register map. Refer to ADR-0005. |
-| Stretch protocols | Refer to week 8 | Week 7 | Decide from the STA data. |
+| Stretch protocols | Refer to week 8 | Week 7 | Accepted: PS/2 and JTAG, as firmware only, with 2 cores. Refer to ADR-0011. |
 
 ---
 
