@@ -627,6 +627,16 @@ module core (
                 assert ($stable(delayCount));
             if ($past(running && execute && !hostExec) && isStalled)
                 assert ($stable(pc) && delayCount == 4'd0);
+            if ($past(running && execute && opcode == opSet && ops[8:6] == 3'd1))
+                assert (x == $past(setData));
+            if ($past(running && execute && opcode == opSet && ops[8:6] == 3'd2))
+                assert (y == $past(setData));
+            if ($past(running && execute && opcode == opSet && ops[8:6] == 3'd3))
+                assert (t == $past(setData));
+            if ($past(running && execute && opcode == opMov && ops == 9'b001_000_010))
+                assert (x == $past(y));
+            if ($past(running && execute && opcode == opJmp && ops[8:6] == 3'd0))
+                assert (pc == $past(pc + {{2{ops[5]}}, ops[5:0]}));
             if ($past(running && execute && !hostExec && complete && !jumpEn && !pendingExecValid))
                 assert (pc == (($past(pc) == $past(wrapTop)) ? $past(wrapBottom) : $past(pc) + 8'd1));
         end

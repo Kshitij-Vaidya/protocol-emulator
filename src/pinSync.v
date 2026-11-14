@@ -25,4 +25,21 @@ module pinSync #(
         end
     end
 
+`ifdef FORMAL
+    reg pastValid  = 1'b0;
+    reg past2Valid = 1'b0;
+
+    always @(*)
+        assert ((pinsOut & bypass) == (pinsIn & bypass));
+
+    always @(posedge clk) begin
+        pastValid  <= 1'b1;
+        past2Valid <= pastValid;
+        if (past2Valid && $past(rstN) && $past(rstN, 2))
+            assert ((pinsOut & ~bypass) == ($past(pinsIn, 2) & ~bypass));
+        if (pastValid && !$past(rstN))
+            assert ((pinsOut & ~bypass) == {width{1'b0}});
+    end
+`endif
+
 endmodule
